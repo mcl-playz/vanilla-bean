@@ -3,6 +3,7 @@ import { parseHTML } from "linkedom";
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
+import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { brand, c } from "../log.ts";
 import { handleApi, matchWs, preloadWs } from "./api-routes.ts";
@@ -68,7 +69,8 @@ function splitAtBody(document: Document): [string, string] {
   return [html.slice(0, i), html.slice(i + "<!--vb-stream-->".length)];
 }
 
-type CacheEntry = { html: string; status: number; buf?: Buffer; br?: Buffer; gzip?: Buffer };
+type EncodedStore = { br?: Buffer | Promise<Buffer>; gzip?: Buffer | Promise<Buffer> };
+type CacheEntry = EncodedStore & { html: string; status: number; buf?: Buffer };
 const cachePage = (key: string, html: string, status: number): void => {
   pageCache.set(key, { html, status });
   if (pageCache.size > CACHE_MAX) pageCache.delete(pageCache.keys().next().value as string);
@@ -146,15 +148,52 @@ const TYPES: Record<string, string> = {
   ".png": "image/png",
 };
 
-function encodeFor(accept: string, raw: Buffer, store: { br?: Buffer; gzip?: Buffer }): [string | null, Buffer] {
-  if (/\bbr\b/.test(accept)) return ["br", (store.br ??= zlib.brotliCompressSync(raw))];
-  if (/\bgzip\b/.test(accept)) return ["gzip", (store.gzip ??= zlib.gzipSync(raw))];
+const brotliCompress = promisify(zlib.brotliCompress);
+const gzip = promisify(zlib.gzip);
+const HTML_BROTLI_OPTIONS = { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 4 } };
+
+async function cachedCompression(
+  store: EncodedStore,
+  key: "br" | "gzip",
+  compress: () => Promise<Buffer>,
+): Promise<Buffer> {
+  const cached = store[key];
+  if (cached) return cached;
+  const pending = compress();
+  store[key] = pending;
+  try {
+    const body = await pending;
+    store[key] = body;
+    return body;
+  } catch (err) {
+    delete store[key];
+    throw err;
+  }
+}
+
+async function encodeFor(
+  accept: string,
+  raw: Buffer,
+  store: EncodedStore,
+  options?: { html?: boolean },
+): Promise<[string | null, Buffer]> {
+  if (/\bbr\b/.test(accept)) {
+    return [
+      "br",
+      await cachedCompression(store, "br", () =>
+        brotliCompress(raw, options?.html ? HTML_BROTLI_OPTIONS : undefined),
+      ),
+    ];
+  }
+  if (/\bgzip\b/.test(accept)) {
+    return ["gzip", await cachedCompression(store, "gzip", () => gzip(raw))];
+  }
   return [null, raw];
 }
 
-type AssetEntry = { raw: Buffer; type: string; br?: Buffer; gzip?: Buffer };
+type AssetEntry = EncodedStore & { raw: Buffer; type: string };
 const assetCache = new Map<string, AssetEntry>();
-function serveAsset(rel: string, accept = ""): Response {
+async function serveAsset(rel: string, accept = ""): Promise<Response> {
   const dir = path.join(DIST, "_vanilla");
   const file = path.join(dir, rel);
   if (!file.startsWith(dir) || !fs.existsSync(file)) return new Response("Not found", { status: 404 });
@@ -164,7 +203,7 @@ function serveAsset(rel: string, accept = ""): Response {
       file,
       (entry = { raw: fs.readFileSync(file), type: TYPES[path.extname(file)] || "application/octet-stream" }),
     );
-  const [encoding, body] = encodeFor(accept, entry.raw, entry);
+  const [encoding, body] = await encodeFor(accept, entry.raw, entry);
   const headers: Record<string, string> = {
     "content-type": entry.type,
     "cache-control": "public, max-age=31536000, immutable",
@@ -187,7 +226,7 @@ app.onRequest(async ({ request }: any) => {
   );
 });
 
-app.get("/_vanilla/*", ({ params, request }: any) =>
+app.get("/_vanilla/*", async ({ params, request }: any) =>
   serveAsset(params["*"], request.headers.get("accept-encoding") || ""),
 );
 
@@ -209,7 +248,7 @@ const CACHE_MAX = 5000;
 const HTML_HEADERS: Record<string, string> = { "content-type": "text/html; charset=utf-8" };
 const pageCache = new Map<string, CacheEntry>();
 
-app.get("*", ({ request }: any) => {
+app.get("*", async ({ request }: any) => {
   const url = new URL(request.url);
   if (path.extname(url.pathname)) return new Response("Not found", { status: 404 });
   const key = url.pathname + url.search;
@@ -218,10 +257,11 @@ app.get("*", ({ request }: any) => {
   if (hit) {
     pageCache.delete(key);
     pageCache.set(key, hit);
-    const [encoding, body] = encodeFor(
+    const [encoding, body] = await encodeFor(
       request.headers.get("accept-encoding") || "",
       (hit.buf ??= Buffer.from(hit.html)),
       hit,
+      { html: true },
     );
     const headers: Record<string, string> = { ...HTML_HEADERS, vary: "Accept-Encoding" };
     if (encoding) headers["content-encoding"] = encoding;
