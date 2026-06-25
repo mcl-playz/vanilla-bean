@@ -25,7 +25,7 @@ export default function WsDemo() {
         <title>websocket</title>
       </Head>
       <h3>websocket</h3>
-      <p class="hint">
+      <p>
         Live socket to <code>/api/echo</code> (a <code>*.ws.js</code> route).
       </p>
       <div class="flex gap-2">

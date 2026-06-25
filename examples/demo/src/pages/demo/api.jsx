@@ -20,7 +20,7 @@ export default function ApiDemo() {
         <title>api demo</title>
       </Head>
       <h3>api routes</h3>
-      <p class="hint">
+      <p>
         File-based handlers under <code>src/api</code>, with <code>[id]</code> params and method exports.
       </p>
       <div class="flex flex-wrap gap-2">

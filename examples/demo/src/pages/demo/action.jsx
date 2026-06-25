@@ -15,7 +15,7 @@ export default function ActionDemo() {
         <title>server action</title>
       </Head>
       <h3>server action</h3>
-      <p class="hint">
+      <p>
         Runs <code>bump()</code> on the server
       </p>
       <button onClick={onClick}>bump on server</button>

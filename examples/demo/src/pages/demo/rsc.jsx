@@ -6,7 +6,7 @@ async function ServerOrigin() {
 
   return (
     <p>
-      your origin, resolved on the server: <code>{data.origin}</code>
+      your user-agent, resolved on the server: <code>{data.headers["User-Agent"]}</code>
     </p>
   );
 }
@@ -18,7 +18,7 @@ export default function RscDemo() {
         <title>use server</title>
       </Head>
       <h3>"use server" component</h3>
-      <p class="hint">
+      <p>
         Fetched + rendered on the server with a plain <code>async</code> component, <strong>streamed</strong> in after
         the shell, adopted with no client re-fetch.
       </p>

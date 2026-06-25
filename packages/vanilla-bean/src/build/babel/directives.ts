@@ -119,11 +119,12 @@ export default function directives({ types: t }: any, opts: any = {}): any {
       ? t.callExpression(t.identifier("__mark"), [markFn, t.stringLiteral(mode), t.stringLiteral(key)])
       : t.callExpression(t.identifier("__static"), [t.stringLiteral(key), staticFn]);
 
-    if (p.isFunctionDeclaration() && !p.parentPath.isExportDefaultDeclaration()) {
-      p.replaceWith(t.variableDeclaration("const", [t.variableDeclarator(n.id, replacement)]));
-    } else {
-      p.replaceWith(replacement);
-    }
+    if (p.isFunctionDeclaration() && n.id) {
+      const decl = t.variableDeclaration("const", [t.variableDeclarator(t.cloneNode(n.id), replacement)]);
+      if (p.parentPath.isExportDefaultDeclaration()) {
+        p.parentPath.replaceWithMultiple([decl, t.exportDefaultDeclaration(t.cloneNode(n.id))]);
+      } else p.replaceWith(decl);
+    } else p.replaceWith(replacement);
   }
 
   return {

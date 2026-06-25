@@ -11,6 +11,11 @@ function Origin() {
   return <div onClick={() => alert("your origin: " + data?.origin)}>origin: {data?.origin}</div>;
 }
 
+function Version() {
+  "use server";
+  return <p>Ant version {Ant.version}</p>;
+}
+
 function Boom() {
   throw new Error("render failed on purpose");
 }
@@ -32,5 +37,7 @@ export default () => (
     <ErrorBoundary fallback={(err) => <p class="text-red-500">caught: {err.message}</p>}>
       <Boom />
     </ErrorBoundary>
+
+    <Version />
   </Fragment>
 );
