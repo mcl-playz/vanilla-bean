@@ -111,13 +111,13 @@ async function streamRoute(
   const restore = enterRenderGlobals(document as unknown as Document, Node, url);
   const tracker = trackAsync();
   try {
-    await renderRouteToDocument(url.pathname);
+    const rendered = await renderRouteToDocument(url.pathname);
     const slots = tagBoundaries(document as unknown as Document);
 
     if (!slots.length) {
       const html = "<!doctype html>\n" + document.documentElement.outerHTML;
       send(html);
-      cachePage(key, html, status);
+      if (rendered.cache) cachePage(key, html, status);
       return;
     }
 
@@ -134,7 +134,7 @@ async function streamRoute(
     }
     chunks.push(tail);
     send(tail);
-    if (settled) cachePage(key, chunks.join(""), status);
+    if (settled && rendered.cache) cachePage(key, chunks.join(""), status);
   } finally {
     untrackAsync();
     restore();

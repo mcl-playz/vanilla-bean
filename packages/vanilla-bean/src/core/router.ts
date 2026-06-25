@@ -34,6 +34,7 @@ type Chain = {
   ErrorComp: Component | null;
   notFound: boolean;
   serverRoute: boolean;
+  cache: boolean;
 };
 
 const pageModules = import.meta.glob("/src/pages/**/*.{jsx,tsx}");
@@ -179,12 +180,14 @@ async function loadChain(path: string): Promise<Chain> {
     load(errDir ? errorDirs[errDir]! : null),
   ]);
   const serverRoute = [pageMod, ...layoutMods].some((mm) => mm && mm.__serverRoute);
+  const cache = pageMod?.cache === true && layoutMods.every((mm) => mm?.cache !== false);
   return {
     layouts: layoutMods.map((mm) => mm.default),
     page: pageMod ? pageMod.default : null,
     ErrorComp: errMod ? errMod.default : null,
     notFound: !known,
     serverRoute,
+    cache,
   };
 }
 
@@ -389,7 +392,7 @@ function swap(chain: Chain, path: string): void {
   mounted = mounted.concat(layers);
 }
 
-export async function renderRouteToDocument(path: string): Promise<void> {
+export async function renderRouteToDocument(path: string): Promise<{ cache: boolean }> {
   clearHead();
   const chain = await loadChain(path);
   loc = makeSignal<Loc>(snapshot());
@@ -397,4 +400,5 @@ export async function renderRouteToDocument(path: string): Promise<void> {
   const tree = chain.layouts.reduceRight((child: any, Layout) => h(Layout, null, child), node as any);
   document.getElementById("root")!.replaceChildren(tree);
   flushHead();
+  return { cache: chain.cache };
 }

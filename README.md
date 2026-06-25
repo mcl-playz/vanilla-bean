@@ -190,6 +190,14 @@ export default async function Page() {
 }
 ```
 
+SSR HTML is not cached by default. If a page is safe to share across requests, opt it into the server's in-memory HTML cache:
+
+```jsx
+export const cache = true;
+```
+
+Any layout in the route chain can veto that with `export const cache = false`.
+
 ## Server actions
 
 A file that starts with `"use server"` turns its exports into server functions you can call from the client. The body never ships to the browser, module state lives on the server:
