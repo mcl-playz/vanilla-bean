@@ -18,7 +18,8 @@
   ],
   "scripts": {
     "build": "tsup",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepack": "cp ../../README.md README.md"
   },
   "publishConfig": {
     "bin": {

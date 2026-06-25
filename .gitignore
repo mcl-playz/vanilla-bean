@@ -2,5 +2,7 @@
 .nova
 
 plan.md
+packages/vanilla-bean/README.md
+
 dist
 node_modules

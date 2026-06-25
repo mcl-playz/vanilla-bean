@@ -20,38 +20,64 @@ export default function directives({ types: t }: any, opts: any = {}): any {
     t.importDeclaration([t.importSpecifier(t.identifier(name), t.identifier(name))], t.stringLiteral("vanilla-bean"));
 
   function handleUseServer(p: any, state: any): void {
+    state.serverModule = true;
     const file = rel(state);
     const id = (name: string) => hashKey(`${file}:${name}`);
+    const defaultKey = hashKey(`${file}:default`);
+    const markServer = (arg: any) =>
+      t.callExpression(t.identifier("__mark"), [arg, t.stringLiteral("server"), t.stringLiteral(defaultKey)]);
+
     const names: string[] = [];
+    let hasDefault = false;
     for (const stmt of p.node.body) {
-      if (!t.isExportNamedDeclaration(stmt) || !stmt.declaration) continue;
-      const decl = stmt.declaration;
-      if (t.isFunctionDeclaration(decl) && decl.id) names.push(decl.id.name);
-      else if (t.isVariableDeclaration(decl))
-        for (const d of decl.declarations) if (t.isIdentifier(d.id)) names.push(d.id.name);
+      if (t.isExportNamedDeclaration(stmt) && stmt.declaration) {
+        const decl = stmt.declaration;
+        if (t.isFunctionDeclaration(decl) && decl.id) names.push(decl.id.name);
+        else if (t.isVariableDeclaration(decl))
+          for (const d of decl.declarations) if (t.isIdentifier(d.id)) names.push(d.id.name);
+      } else if (t.isExportDefaultDeclaration(stmt)) {
+        hasDefault = true;
+      }
     }
 
-    if (isServerBuild) {
-      const regs = names.map((n) =>
-        t.expressionStatement(t.callExpression(t.identifier("__register"), [t.stringLiteral(id(n)), t.identifier(n)])),
+    const actionConst = (n: string) =>
+      t.exportNamedDeclaration(
+        t.variableDeclaration("const", [
+          t.variableDeclarator(t.identifier(n), t.callExpression(t.identifier("__action"), [t.stringLiteral(id(n))])),
+        ]),
+        [],
       );
-      p.node.body.push(...regs);
-      p.unshiftContainer("body", importFrom("__register"));
-    } else {
-      p.node.body = [
-        importFrom("__action"),
+
+    if (isServerBuild) {
+      for (const stmt of p.node.body) {
+        if (!t.isExportDefaultDeclaration(stmt)) continue;
+        const decl = stmt.declaration;
+        const expr = t.isFunctionDeclaration(decl)
+          ? toFnExpr(decl)
+          : t.isClassDeclaration(decl)
+            ? t.classExpression(decl.id, decl.superClass, decl.body, decl.decorators || [])
+            : decl;
+        stmt.declaration = markServer(expr);
+      }
+      p.node.body.push(
         ...names.map((n) =>
-          t.exportNamedDeclaration(
-            t.variableDeclaration("const", [
-              t.variableDeclarator(
-                t.identifier(n),
-                t.callExpression(t.identifier("__action"), [t.stringLiteral(id(n))]),
-              ),
-            ]),
-            [],
+          t.expressionStatement(
+            t.callExpression(t.identifier("__register"), [t.stringLiteral(id(n)), t.identifier(n)]),
           ),
         ),
-      ];
+      );
+      if (names.length) p.unshiftContainer("body", importFrom("__register"));
+      if (hasDefault) p.unshiftContainer("body", importFrom("__mark"));
+    } else {
+      const body: any[] = [];
+      if (names.length) body.push(importFrom("__action"));
+      if (hasDefault) body.push(importFrom("__mark"));
+      for (const n of names) body.push(actionConst(n));
+      if (hasDefault) {
+        body.push(t.exportDefaultDeclaration(markServer(t.arrowFunctionExpression([], t.nullLiteral()))));
+        state.serverStripped = true;
+      }
+      p.node.body = body;
     }
     p.node.directives = [];
   }
