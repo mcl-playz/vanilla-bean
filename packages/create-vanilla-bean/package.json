@@ -1,6 +1,6 @@
 {
   "name": "create-vanilla-bean",
-  "version": "0.0.1-rc.9",
+  "version": "0.0.1-rc.10",
   "type": "module",
   "description": "Scaffold a new vanilla bean app.",
   "license": "MIT",
