@@ -5,16 +5,27 @@
   "description": "Tiny framework with signals, hydration, and streaming SSR, built for Ant.",
   "license": "MIT",
   "packageManager": "pnpm@11.5.1",
-  "bin": {
-    "vanilla-bean": "./src/build/cli.ts"
+  "homepage": "https://vanilla.cafe",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/theMackabu/vanilla-bean.git"
   },
+  "bin": {
+    "vanilla-bean": "dist/cli.js"
+  },
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./vite": "./src/build/vite/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./vite": {
+      "types": "./dist/vite.d.ts",
+      "import": "./dist/vite.js"
+    }
   },
   "files": [
-    "dist",
-    "src"
+    "dist"
   ],
   "scripts": {
     "build": "tsup",
@@ -22,19 +33,7 @@
     "prepack": "cp ../../README.md README.md"
   },
   "publishConfig": {
-    "bin": {
-      "vanilla-bean": "./dist/cli.js"
-    },
-    "exports": {
-      ".": {
-        "types": "./dist/index.d.ts",
-        "import": "./dist/index.js"
-      },
-      "./vite": {
-        "types": "./dist/vite.d.ts",
-        "import": "./dist/vite.js"
-      }
-    }
+    "tag": "next"
   },
   "dependencies": {
     "@babel/core": "^8.0.1",

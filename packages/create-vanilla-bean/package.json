@@ -4,8 +4,13 @@
   "type": "module",
   "description": "Scaffold a new vanilla bean app.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/theMackabu/vanilla-bean.git"
+  },
+  "homepage": "https://vanilla.cafe",
   "bin": {
-    "create-vanilla-bean": "./index.js"
+    "create-vanilla-bean": "index.js"
   },
   "files": [
     "index.js",

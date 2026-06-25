@@ -28,7 +28,6 @@ function Counter() {
 - [CLI](#cli)
 - [Runtimes](#runtimes)
 - [Project structure](#project-structure)
-- [License](#license)
 
 ## Why vanilla bean?
 
