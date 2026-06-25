@@ -80,6 +80,10 @@ export function exitServer(): void {
   serverDepth--;
 }
 
+export function trackServer(p: Promise<unknown>): void {
+  asyncTracker?.add(p);
+}
+
 export async function settle(set: Set<Promise<unknown>>): Promise<boolean> {
   let did = false;
   for (let i = 0; i < 50 && set.size; i++) {

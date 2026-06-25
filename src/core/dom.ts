@@ -1,4 +1,4 @@
-import { effect, disposeChildren, enterServer, exitServer } from "./reactive.ts";
+import { effect, disposeChildren, enterServer, exitServer, trackServer } from "./reactive.ts";
 
 export type Props = Record<string, any> & { children?: unknown };
 
@@ -121,11 +121,23 @@ export function h(tag: string | Component, props: Props | null, ...children: unk
       const savedFetch = globalThis.fetch;
       if (serverFetch) globalThis.fetch = serverFetch;
       enterServer();
+      let out: unknown;
       try {
-        appendChild(w, tag(p));
+        out = tag(p);
       } finally {
         exitServer();
         globalThis.fetch = savedFetch;
+      }
+      if (out && typeof (out as Promise<unknown>).then === "function") {
+        w.setAttribute("data-fb", "");
+        trackServer(
+          Promise.resolve(out).then((node) => {
+            appendChild(w, node);
+            w.removeAttribute("data-fb");
+          }),
+        );
+      } else {
+        appendChild(w, out);
       }
       return w;
     }

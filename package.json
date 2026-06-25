@@ -2,7 +2,7 @@
   "name": "vanilla-bean",
   "version": "0.0.1-rc.9",
   "type": "module",
-  "description": "Tiny JSX framework with fine-grained signals, real DOM, hydration, and streaming SSR, built for Ant.",
+  "description": "Tiny framework with signals, hydration, and streaming SSR, built for Ant.",
   "license": "MIT",
   "packageManager": "pnpm@11.5.1",
   "bin": {
