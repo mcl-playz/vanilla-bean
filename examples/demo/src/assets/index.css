@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+:root {
+  @apply antialiased;
+  @apply bg-white dark:bg-zinc-950;
+
+  isolation: isolate;
+  scrollbar-width: thin;
+  color-scheme: light dark;
+  text-rendering: optimizeLegibility;
+}

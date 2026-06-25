@@ -1,0 +1,19 @@
+{
+  "name": "demo",
+  "type": "module",
+  "scripts": {
+    "dev": "vanilla-bean dev",
+    "build": "vanilla-bean build",
+    "build:client": "vanilla-bean build:client",
+    "preview": "vanilla-bean preview",
+    "start": "vanilla-bean start"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.1",
+    "tailwindcss": "^4.3.1",
+    "vanilla-bean": "workspace:*"
+  },
+  "dependencies": {
+    "cnfast": "^0.0.8"
+  }
+}
