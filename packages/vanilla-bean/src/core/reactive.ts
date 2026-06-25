@@ -6,6 +6,34 @@ type Effect = {
 };
 
 const effectStack: Effect[] = [];
+const pendingEffects = new Set<Effect>();
+let flushQueued = false;
+let flushing = false;
+
+function scheduleEffect(eff: Effect): void {
+  if (eff.disposed) return;
+  pendingEffects.add(eff);
+  if (flushQueued || flushing) return;
+  flushQueued = true;
+  queueMicrotask(flushEffects);
+}
+
+function flushEffects(): void {
+  flushQueued = false;
+  flushing = true;
+  try {
+    for (const eff of pendingEffects) {
+      pendingEffects.delete(eff);
+      eff.execute();
+    }
+  } finally {
+    flushing = false;
+  }
+  if (pendingEffects.size) {
+    flushQueued = true;
+    queueMicrotask(flushEffects);
+  }
+}
 
 function currentEffect(): Effect | undefined {
   return effectStack[effectStack.length - 1];
@@ -37,8 +65,9 @@ export function makeSignal<T>(initial?: T): Signal<T> {
   const write = (next: T): void => {
     if (Object.is(next, value)) return;
     value = next;
-    for (const eff of [...subscribers]) {
-      if (eff !== currentEffect()) eff.execute();
+    const active = currentEffect();
+    for (const eff of subscribers) {
+      if (eff !== active) scheduleEffect(eff);
     }
   };
 
@@ -132,6 +161,7 @@ export function effect(fn: () => unknown): Effect {
 export function dispose(eff: Effect | null | undefined): void {
   if (!eff || eff.disposed) return;
   eff.disposed = true;
+  pendingEffects.delete(eff);
   for (const child of eff.children) dispose(child);
   eff.children.clear();
   cleanup(eff);
