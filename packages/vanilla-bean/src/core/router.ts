@@ -168,6 +168,7 @@ function nearestDir(dirs: Record<string, Loader>, urlPath: string): string | nul
 async function loadChain(path: string): Promise<Chain> {
   const m = matchRoute(path);
   matchedParams = m ? m.params : {};
+
   const known = !!m;
   const nfDir = known ? null : nearestDir(notFoundDirs, path);
   const baseFile = known ? m!.file : nfDir ? nfDir + "/not-found.jsx" : "/src/pages/_.jsx";
@@ -179,8 +180,13 @@ async function loadChain(path: string): Promise<Chain> {
     load(known ? m!.loader : nfDir ? notFoundDirs[nfDir]! : null),
     load(errDir ? errorDirs[errDir]! : null),
   ]);
+
   const serverRoute = [pageMod, ...layoutMods].some((mm) => mm && mm.__serverRoute);
-  const cache = pageMod?.cache === true && layoutMods.every((mm) => mm?.cache !== false);
+  const routeMods = [pageMod, ...layoutMods].filter(Boolean);
+
+  const nonSsr = routeMods.every((mm) => mm.default?.__mode === "client" || mm.default?.__mode === "static");
+  const cache = layoutMods.every((mm) => mm?.cache !== false) && (pageMod?.cache === true || nonSsr);
+
   return {
     layouts: layoutMods.map((mm) => mm.default),
     page: pageMod ? pageMod.default : null,

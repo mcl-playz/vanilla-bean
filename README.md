@@ -190,7 +190,7 @@ export default async function Page() {
 }
 ```
 
-SSR HTML is not cached by default. If a page is safe to share across requests, opt it into the server's in-memory HTML cache:
+Routes whose page and layouts are all marked `"use client"` or `"use static"` are cached by default. SSR HTML is not cached by default; if a page is safe to share across requests, opt it into the server's in-memory HTML cache:
 
 ```jsx
 export const cache = true;
