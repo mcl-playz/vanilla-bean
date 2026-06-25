@@ -76,11 +76,12 @@ const cachePage = (key: string, html: string, status: number): void => {
   if (pageCache.size > CACHE_MAX) pageCache.delete(pageCache.keys().next().value as string);
 };
 
-function settleCapped(tracker: Set<Promise<unknown>>): Promise<unknown> {
+function settleCapped(tracker: Set<Promise<unknown>>): Promise<boolean> {
   let timer: ReturnType<typeof setTimeout>;
-  return Promise.race([settle(tracker), new Promise<void>((r) => (timer = setTimeout(r, RENDER_TIMEOUT)))]).finally(
-    () => clearTimeout(timer),
-  );
+  return Promise.race([
+    settle(tracker).then(() => tracker.size === 0),
+    new Promise<false>((r) => (timer = setTimeout(() => r(false), RENDER_TIMEOUT))),
+  ]).finally(() => clearTimeout(timer));
 }
 
 const enc = new TextEncoder();
@@ -121,14 +122,19 @@ async function streamRoute(
     }
 
     const [shell, tail] = splitAtBody(document as unknown as Document);
-    send(shell + fillRuntime);
-    await settleCapped(tracker);
+    const chunks = [shell + fillRuntime];
+    send(chunks[0]!);
+    const settled = await settleCapped(tracker);
 
     for (const slot of slots) {
       if (slot.hasAttribute("data-fb")) continue;
-      send(fillChunk(slot.getAttribute("data-vb")!, slot.innerHTML));
+      const chunk = fillChunk(slot.getAttribute("data-vb")!, slot.innerHTML);
+      chunks.push(chunk);
+      send(chunk);
     }
+    chunks.push(tail);
     send(tail);
+    if (settled) cachePage(key, chunks.join(""), status);
   } finally {
     untrackAsync();
     restore();
@@ -180,9 +186,7 @@ async function encodeFor(
   if (/\bbr\b/.test(accept)) {
     return [
       "br",
-      await cachedCompression(store, "br", () =>
-        brotliCompress(raw, options?.html ? HTML_BROTLI_OPTIONS : undefined),
-      ),
+      await cachedCompression(store, "br", () => brotliCompress(raw, options?.html ? HTML_BROTLI_OPTIONS : undefined)),
     ];
   }
   if (/\bgzip\b/.test(accept)) {
