@@ -2,6 +2,7 @@ type Effect = {
   deps: Set<Set<Effect>>;
   children: Set<Effect>;
   disposed: boolean;
+  asyncFn?: boolean;
   schedule?(): void;
   execute(): unknown;
 };
@@ -136,9 +137,10 @@ export function effect(fn: () => unknown): Effect {
     deps: new Set(),
     children: new Set(),
     disposed: false,
+    asyncFn: isAsyncFn(fn),
     execute() {
       if (eff.disposed) return;
-      if (import.meta.env?.SSR && isAsyncFn(fn)) {
+      if (import.meta.env?.SSR && eff.asyncFn) {
         if (boundary && boundary.pending) boundary.pending(boundary.pending() + 1);
         return;
       }

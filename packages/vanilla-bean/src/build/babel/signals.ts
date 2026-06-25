@@ -55,14 +55,9 @@ export default function signals({ types: t }: any): any {
   return {
     name: "framework-signals",
     visitor: {
-      Program(path: any) {
-        path.scope.crawl();
-        path.traverse({
-          VariableDeclarator(p: any) {
-            rewriteSignal(p);
-            rewriteDestructure(p);
-          },
-        });
+      VariableDeclarator(path: any) {
+        rewriteSignal(path);
+        rewriteDestructure(path);
       },
     },
   };

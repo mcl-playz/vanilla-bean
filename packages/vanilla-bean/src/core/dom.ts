@@ -291,6 +291,7 @@ export function For(props: Props): any {
   }
 
   let firstRun = true;
+  let prevItems: unknown[] | null = null;
   effect(() => {
     const items = each() || [];
 
@@ -300,9 +301,12 @@ export function For(props: Props): any {
         for (let i = 0; i < items.length; i++) map.set(keyOf(items[i], i), render(items[i], i));
         if (as == null && cursor && cursor.nodeType === 8) cursor = cursor.nextSibling;
       });
+      prevItems = items;
       return;
     }
+    if (!firstRun && items === prevItems) return;
     firstRun = false;
+    prevItems = items;
 
     const parent = start ? start.parentNode! : box;
     const nextMap = new Map<unknown, Node>();
