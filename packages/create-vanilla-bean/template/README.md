@@ -7,6 +7,6 @@ ant install
 ant dev
 ```
 
-- `src/pages/` — file-based routes
-- `src/layout.{{x}}` — root layout
-- `vanilla-bean.config.{{configExt}}` — config
+- `src/pages/` file-based routes
+- `src/layout.{{x}}` root layout
+- `vanilla-bean.config.{{configExt}}` config

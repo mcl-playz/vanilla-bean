@@ -190,7 +190,7 @@ async function loadChain(path: string): Promise<Chain> {
 
 function buildPage(chain: Chain, props: Loc, path: string, reset: () => void): Node {
   const { page, ErrorComp } = chain;
-  const make = () => (page ? h(page, props) : document.createTextNode(`404 — no page for ${path}`));
+  const make = () => (page ? h(page, props) : document.createTextNode(`404: no page for ${path}`));
   if (!ErrorComp) return make();
   return h(ErrorBoundary, { fallback: (error: unknown) => h(ErrorComp, { error, reset }) }, make);
 }

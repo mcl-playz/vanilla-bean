@@ -46,10 +46,6 @@ export function makeSignal<T>(initial?: T): Signal<T> {
   return fn as Signal<T>;
 }
 
-// The compiler rewrites a signal's reads and writes into get/set calls, so to the
-// author it behaves like a plain value. Type it as that value (not Signal<T>) so the
-// sugar — `count`, `count++`, `count = x` — type-checks. makeSignal is the real
-// callable for code that opts out of the sugar (internals, escape hatch).
 export function signal<T>(initial: T): T;
 export function signal<T = undefined>(): T | undefined;
 export function signal(initial?: any): any {
