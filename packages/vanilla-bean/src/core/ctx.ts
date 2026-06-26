@@ -8,7 +8,10 @@ export type Loc = {
   params: Record<string, unknown>;
 };
 
-export type Redirect = { url: string; status: number };
+export type Redirect = {
+  url: string;
+  status: number;
+};
 
 export type Ctx = {
   doc: Document;
@@ -26,6 +29,7 @@ export type Ctx = {
   request: Request | null;
   resHeaders: Headers;
   redirect: Redirect | null;
+  dynamic: boolean;
   matchedParams: Record<string, unknown>;
   mounted: any[];
   pageOwner: Owner | null;
@@ -34,7 +38,14 @@ export type Ctx = {
   transitions: boolean;
 };
 
-export function makeCtx(doc: any, Node: any, opts: { url?: URL; request?: Request | null } = {}): Ctx {
+export function makeCtx(
+  doc: any,
+  Node: any,
+  opts: {
+    url?: URL;
+    request?: Request | null;
+  } = {},
+): Ctx {
   return {
     doc,
     Node,
@@ -51,6 +62,7 @@ export function makeCtx(doc: any, Node: any, opts: { url?: URL; request?: Reques
     request: opts.request ?? null,
     resHeaders: new Headers(),
     redirect: null,
+    dynamic: false,
     matchedParams: {},
     mounted: [],
     pageOwner: null,

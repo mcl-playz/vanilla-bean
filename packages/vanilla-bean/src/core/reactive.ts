@@ -137,6 +137,7 @@ export function untrackAsync(ctx: Ctx): void {
   ctx.tracker = null;
 }
 export function trackServer(ctx: Ctx, p: Promise<unknown>): void {
+  ctx.dynamic = true;
   ctx.tracker?.add(p);
 }
 

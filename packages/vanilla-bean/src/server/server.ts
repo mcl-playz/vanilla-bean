@@ -6,7 +6,7 @@ import zlib from "node:zlib";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { brand, c } from "../log.ts";
-import { handleApi, matchWs, preloadWs } from "./api-routes.ts";
+import { registerApiRoutes, matchWs, preloadWs } from "./api-routes.ts";
 import { fillRuntime, fillChunk, tagBoundaries } from "./streaming.ts";
 
 import {
@@ -98,21 +98,23 @@ async function renderHtml(key: string, status: number, origin: string, request: 
   const res = ctx.resHeaders;
 
   if (ctx.redirect) return { kind: "redirect", redirect: ctx.redirect, res };
+  const cacheable = !!rendered?.cache && !ctx.dynamic;
 
   const slots = tagBoundaries(document as unknown as Document);
   if (!slots.length) {
     const html = "<!doctype html>\n" + document.documentElement.outerHTML;
-    if (rendered?.cache) cachePage(key, html, status);
+    if (cacheable) cachePage(key, html, status);
     return { kind: "html", html, res };
   }
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const send = (s: string) => controller.enqueue(enc.encode(s));
+      const chunks: string[] = [];
+      const send = (s: string) => (chunks.push(s), controller.enqueue(enc.encode(s)));
       try {
         const [shell, tail] = splitAtBody(document as unknown as Document);
         send(shell + fillRuntime);
-        await settleCapped(tracker);
+        const settled = await settleCapped(tracker);
         if (ctx.redirect) send(`<script>location.replace(${JSON.stringify(ctx.redirect.url)})</script>`);
         else {
           for (const slot of slots) {
@@ -121,6 +123,8 @@ async function renderHtml(key: string, status: number, origin: string, request: 
           }
         }
         send(tail);
+        // ctx.dynamic may flip during settle (a server component read cookies)
+        if (settled && !!rendered?.cache && !ctx.dynamic && !ctx.redirect) cachePage(key, chunks.join(""), status);
       } finally {
         controller.close();
       }
@@ -227,17 +231,7 @@ async function serveAsset(rel: string, accept = ""): Promise<Response> {
 }
 
 const app = new Elysia();
-
-app.onRequest(async ({ request }: any) => {
-  if (!new URL(request.url).pathname.startsWith("/api/")) return;
-  return (
-    (await handleApi(request)) ??
-    new Response(JSON.stringify({ error: "not found" }), {
-      status: 404,
-      headers: { "content-type": "application/json" },
-    })
-  );
-});
+registerApiRoutes(app);
 
 app.get("/_vanilla/*", async ({ params, request }: any) =>
   serveAsset(params["*"], request.headers.get("accept-encoding") || ""),

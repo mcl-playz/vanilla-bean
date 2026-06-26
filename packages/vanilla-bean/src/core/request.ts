@@ -1,6 +1,7 @@
 import type { Ctx, Redirect } from "./ctx.ts";
 
 export function getRequest(ctx: Ctx): Request {
+  ctx.dynamic = true; // reading the request makes this render per-request → uncacheable
   if (!ctx.request) throw new Error("getRequest() is only available on the server, during a request");
   return ctx.request;
 }
@@ -42,6 +43,7 @@ function serializeCookie(name: string, value: string, o: CookieOptions): string 
 }
 
 export function cookies(ctx: Ctx) {
+  ctx.dynamic = true;
   const jar = parseCookies(ctx.request?.headers.get("cookie") || "");
   return {
     get: (name: string): string | undefined => jar[name],
@@ -55,6 +57,7 @@ export function cookies(ctx: Ctx) {
 }
 
 export function setHeader(ctx: Ctx, name: string, value: string): void {
+  ctx.dynamic = true;
   ctx.resHeaders.set(name, value);
 }
 

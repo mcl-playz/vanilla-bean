@@ -92,3 +92,36 @@ export async function handleApi(request: Request): Promise<Response | null> {
   const ctx = { params: match.params, query: Object.fromEntries(url.searchParams), url };
   return toResponse(await handler(request, ctx));
 }
+
+const elysiaPath = (parts: Part[]): string =>
+  "/" + parts.map((p) => (typeof p === "string" ? p : "param" in p ? ":" + p.param : "*")).join("/");
+
+function paramsFrom(parts: Part[], e: Record<string, string>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const p of parts) {
+    if (typeof p === "string") continue;
+    if ("param" in p) out[p.param] = decodeURIComponent(e[p.param] ?? "");
+    else
+      out[p.catch] = String(e["*"] ?? "")
+        .split("/")
+        .filter(Boolean)
+        .map(decodeURIComponent);
+  }
+  return out;
+}
+
+const METHODS = ["get", "post", "put", "patch", "delete"] as const;
+export function registerApiRoutes(app: any): void {
+  for (const route of apiTable) {
+    const path = elysiaPath(route.parts);
+    const handler = async (c: any) => {
+      const mod = await route.load();
+      const fn = mod[c.request.method] || (c.request.method === "GET" ? mod.default : null);
+      if (!fn) return new Response("Method Not Allowed", { status: 405 });
+      const url = new URL(c.request.url);
+      const ctx = { params: paramsFrom(route.parts, c.params || {}), query: Object.fromEntries(url.searchParams), url };
+      return toResponse(await fn(c.request, ctx));
+    };
+    for (const m of METHODS) app[m](path, handler);
+  }
+}

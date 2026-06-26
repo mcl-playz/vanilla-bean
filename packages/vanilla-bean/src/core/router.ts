@@ -181,10 +181,7 @@ async function loadChain(path: string): Promise<Chain> {
   const serverMods = [...layoutMods, pageMod];
   const serverStart = serverMods.findIndex((mm) => mm && mm.__serverRoute);
   const serverRoute = serverStart !== -1;
-  const routeMods = [pageMod, ...layoutMods].filter(Boolean);
-
-  const nonSsr = routeMods.every((mm) => mm.default?.__mode === "client" || mm.default?.__mode === "static");
-  const cache = layoutMods.every((mm) => mm?.cache !== false) && (pageMod?.cache === true || nonSsr);
+  const cache = layoutMods.every((mm) => mm?.cache !== false) && pageMod?.cache !== false;
 
   return {
     layouts: layoutMods.map((mm) => mm.default),
