@@ -1,3 +1,5 @@
+import { recordExports, resolveModule, lookupExport, ensureScanned } from "./manifest.ts";
+
 const CTX = "__vanilla_ctx";
 
 const CTX_APIS = new Set([
@@ -21,7 +23,9 @@ const CTX_APIS = new Set([
 
 const FRAMEWORK_SOURCES = new Set(["vanilla-bean", "vanilla-bean/jotai"]);
 
-export default function ctxPlugin({ types: t }: { types: any }): any {
+export default function ctxPlugin({ types: t }: { types: any }, options: any = {}): any {
+  const scan = !!options.scan;
+  const mode = options.mode || "b";
   const isCap = (n?: string): boolean => !!n && /^[A-Z]/.test(n);
 
   const ensureParam = (fn: any): void => {
@@ -51,7 +55,8 @@ export default function ctxPlugin({ types: t }: { types: any }): any {
     name: "framework:ctx",
     visitor: {
       Program: {
-        exit(path: any) {
+        exit(path: any, state: any) {
+          const filename: string = state?.file?.opts?.filename || "";
           const ctxLocals = new Set<string>(["h"]);
           for (const stmt of path.node.body) {
             if (t.isImportDeclaration(stmt) && FRAMEWORK_SOURCES.has(stmt.source.value)) {
@@ -71,6 +76,27 @@ export default function ctxPlugin({ types: t }: { types: any }): any {
             },
           });
 
+          const resolveImportedCall = (binding: any): "ctx" | "plain" | "unknown" => {
+            const ip = binding.path;
+            if (!ip || !ip.parentPath?.node?.source) return "unknown";
+            let importedName: string;
+            if (typeof ip.isImportSpecifier === "function" && ip.isImportSpecifier()) {
+              importedName = t.isIdentifier(ip.node.imported) ? ip.node.imported.name : ip.node.imported.value;
+            } else if (typeof ip.isImportDefaultSpecifier === "function" && ip.isImportDefaultSpecifier()) {
+              importedName = "default";
+            } else {
+              return "unknown";
+            }
+            const source: string = ip.parentPath.node.source.value;
+            if (FRAMEWORK_SOURCES.has(source)) return "unknown";
+            if (!source.startsWith(".")) return "plain";
+            if (!filename) return "unknown";
+            const target = resolveModule(filename, source);
+            if (!target) return "unknown";
+            ensureScanned(target, mode);
+            return lookupExport(mode, target, importedName);
+          };
+
           let usedCall = false;
           path.traverse({
             CallExpression(p: any) {
@@ -78,6 +104,12 @@ export default function ctxPlugin({ types: t }: { types: any }): any {
               if (!t.isIdentifier(c) || ctxLocals.has(c.name) || !/^use[A-Z]/.test(c.name)) return;
               const binding = p.scope.getBinding(c.name);
               if (!binding || binding.kind !== "module") return;
+              const decision = resolveImportedCall(binding);
+              if (decision === "plain") return;
+              if (decision === "ctx") {
+                prependCtx(p.node);
+                return;
+              }
               p.replaceWith(
                 t.callExpression(t.identifier("__call"), [
                   t.identifier(CTX),
@@ -187,6 +219,62 @@ export default function ctxPlugin({ types: t }: { types: any }): any {
 
           const injNames = new Set([...inject].map((i) => i.name).filter(Boolean) as string[]);
 
+          if (filename) {
+            const ctxExports = new Set<string>();
+            const knownExports = new Set<string>();
+            let defaultCtx = false;
+            let defaultKnown = false;
+            const fnInjected = (node: any): boolean | null => {
+              const info = fns.get(node);
+              return info ? inject.has(info) : null;
+            };
+            const bindingFn = (name: string): any => {
+              const b = path.scope.getBinding(name);
+              const n = b?.path?.node;
+              if (!n) return null;
+              if (t.isFunctionDeclaration(n)) return n;
+              if (t.isVariableDeclarator(n) && n.init) return n.init;
+              return null;
+            };
+            const classify = (name: string, node: any): void => {
+              const v = fnInjected(node);
+              if (v === null) return;
+              knownExports.add(name);
+              if (v) ctxExports.add(name);
+            };
+            for (const stmt of path.node.body) {
+              if (t.isExportNamedDeclaration(stmt)) {
+                if (t.isFunctionDeclaration(stmt.declaration) && stmt.declaration.id) {
+                  classify(stmt.declaration.id.name, stmt.declaration);
+                } else if (t.isVariableDeclaration(stmt.declaration)) {
+                  for (const d of stmt.declaration.declarations)
+                    if (t.isIdentifier(d.id) && d.init) classify(d.id.name, d.init);
+                } else if (!stmt.declaration && stmt.specifiers && !stmt.source) {
+                  for (const s of stmt.specifiers) {
+                    if (!t.isExportSpecifier(s)) continue;
+                    const node = bindingFn(s.local.name);
+                    if (node) classify(t.isIdentifier(s.exported) ? s.exported.name : s.exported.value, node);
+                  }
+                }
+              } else if (t.isExportDefaultDeclaration(stmt)) {
+                const d: any = stmt.declaration;
+                const node =
+                  t.isFunctionDeclaration(d) || t.isArrowFunctionExpression(d) || t.isFunctionExpression(d)
+                    ? d
+                    : t.isIdentifier(d)
+                      ? bindingFn(d.name)
+                      : null;
+                const v = node ? fnInjected(node) : null;
+                if (v !== null) {
+                  defaultKnown = true;
+                  if (v) defaultCtx = true;
+                }
+              }
+            }
+            recordExports(mode, filename, { ctx: ctxExports, known: knownExports, defaultCtx, defaultKnown });
+          }
+          if (scan) return;
+
           for (const info of inject) {
             ensureParam(info.node);
             if (info.name) {
@@ -259,6 +347,16 @@ export default function ctxPlugin({ types: t }: { types: any }): any {
                 if (ctxLocals.has(c.name) || HELPERS.has(c.name)) return;
                 const binding = p.scope.getBinding(c.name);
                 if (!binding || binding.kind !== "module" || !inCtxScope(p)) return;
+                const decision = resolveImportedCall(binding);
+                if (decision === "ctx") {
+                  prependCtx(p.node);
+                  p.skip();
+                  return;
+                }
+                if (decision === "plain") {
+                  p.skip();
+                  return;
+                }
                 p.replaceWith(
                   t.callExpression(t.identifier("__call"), [
                     t.identifier(CTX),

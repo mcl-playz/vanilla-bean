@@ -6,6 +6,8 @@ import thunkPlugin from "../babel/jsx-thunk.ts";
 import directives from "../babel/directives.ts";
 import autoJsxRuntime from "../babel/auto-runtime.ts";
 import ctxThread from "../babel/ctx.ts";
+
+import "../babel/scan.ts";
 import type { Ctx } from "./index.ts";
 
 const jsxTransform = (jsxTransformPkg as any).default ?? jsxTransformPkg;
@@ -32,7 +34,7 @@ export function jsxPlugin(ctx: Ctx): any {
         [directives, { server: ctx.ssrBuild, browser }],
         [jsxTransform, { runtime: "classic", pragma: "h", pragmaFrag: "Fragment" }],
         [autoJsxRuntime, { source: "vanilla-bean" }],
-        ctxThread,
+        [ctxThread, { mode: browser ? "b" : "s" }],
       ];
 
       if (ts) plugins.unshift([tsTransform, { isTSX: /\.tsx$/.test(file), allowDeclareFields: true }]);
