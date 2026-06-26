@@ -123,7 +123,6 @@ async function renderHtml(key: string, status: number, origin: string, request: 
           }
         }
         send(tail);
-        // ctx.dynamic may flip during settle (a server component read cookies)
         if (settled && !!rendered?.cache && !ctx.dynamic && !ctx.redirect) cachePage(key, chunks.join(""), status);
       } finally {
         controller.close();
@@ -210,16 +209,16 @@ async function encodeFor(
 
 type AssetEntry = EncodedStore & { raw: Buffer; type: string };
 const assetCache = new Map<string, AssetEntry>();
+const ASSET_DIR = path.join(DIST, "_vanilla");
+
 async function serveAsset(rel: string, accept = ""): Promise<Response> {
-  const dir = path.join(DIST, "_vanilla");
-  const file = path.join(dir, rel);
-  if (!file.startsWith(dir) || !fs.existsSync(file)) return new Response("Not found", { status: 404 });
+  const file = path.join(ASSET_DIR, rel);
   let entry = assetCache.get(file);
-  if (!entry)
-    assetCache.set(
-      file,
-      (entry = { raw: fs.readFileSync(file), type: TYPES[path.extname(file)] || "application/octet-stream" }),
-    );
+  if (!entry) {
+    if (!file.startsWith(ASSET_DIR) || !fs.existsSync(file)) return new Response("Not found", { status: 404 });
+    entry = { raw: fs.readFileSync(file), type: TYPES[path.extname(file)] || "application/octet-stream" };
+    assetCache.set(file, entry);
+  }
   const [encoding, body] = await encodeFor(accept, entry.raw, entry);
   const headers: Record<string, string> = {
     "content-type": entry.type,
@@ -265,12 +264,15 @@ const HTML_HEADERS: Record<string, string> = { "content-type": "text/html; chars
 const pageCache = new Map<string, CacheEntry>();
 
 app.get("*", async ({ request }: any) => {
-  const url = new URL(request.url);
-  if (path.extname(url.pathname)) return new Response("Not found", { status: 404 });
-  const key = url.pathname + url.search;
+  const u: string = request.url;
+  const ps = u.indexOf("/", u.indexOf("://") + 3);
+  const key = ps < 0 ? "/" : u.slice(ps);
+  const qi = key.indexOf("?");
+  const pathname = qi < 0 ? key : key.slice(0, qi);
+  if (path.extname(pathname)) return new Response("Not found", { status: 404 });
 
   if ((request.headers.get("accept") || "").includes(NAV_MIME)) {
-    const { status, body, res } = await renderNav(key, url.origin, request);
+    const { status, body, res } = await renderNav(key, u.slice(0, ps), request);
     return new Response(JSON.stringify({ status, ...body }), {
       status,
       headers: withResHeaders({ "content-type": NAV_MIME }, res),
@@ -291,8 +293,8 @@ app.get("*", async ({ request }: any) => {
     if (encoding) headers["content-encoding"] = encoding;
     return new Response(body as unknown as BodyInit, { status: hit.status, headers });
   }
-  const status = matchRoute(url.pathname) ? 200 : 404;
-  const out = await renderHtml(key, status, url.origin, request);
+  const status = matchRoute(pathname) ? 200 : 404;
+  const out = await renderHtml(key, status, u.slice(0, ps), request);
   const headers = withResHeaders(HTML_HEADERS, out.res);
   if (out.kind === "redirect") {
     headers.set("location", out.redirect.url);
@@ -303,7 +305,8 @@ app.get("*", async ({ request }: any) => {
 });
 
 function fetch(request: Request, env: any): Response | Promise<Response> {
-  if ((request.headers.get("upgrade") || "").toLowerCase() === "websocket") {
+  const upgrade = request.headers.get("upgrade");
+  if (upgrade && upgrade.toLowerCase() === "websocket") {
     const url = new URL(request.url);
     const match = matchWs(url.pathname);
     if (match && env && typeof env.upgradeWebSocket === "function") {
