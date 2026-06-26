@@ -1,13 +1,16 @@
 import { Elysia } from "elysia";
 import { parseHTML } from "linkedom";
+
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
+
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { brand, c } from "../log.ts";
 import { registerApiRoutes, matchWs, preloadWs } from "./api-routes.ts";
 import { fillRuntime, fillChunk, tagBoundaries } from "./streaming.ts";
+import { shimFromLinkedom, SNode } from "./fast-dom.ts";
 
 import {
   preloadAll,
@@ -39,6 +42,10 @@ await preloadWs();
 
 const template = injectStatics(shell, await collectStatics());
 const baseTemplate = parseHTML(template);
+const baseShim = shimFromLinkedom(baseTemplate.document);
+
+const cloneDoc = (): any => baseShim.cloneNode(true);
+const docNode: any = SNode;
 
 function injectStatics(html: string, data: Record<string, unknown>): string {
   if (!data || !Object.keys(data).length) return html;
@@ -86,8 +93,8 @@ type HtmlOut =
   | { kind: "stream"; stream: ReadableStream; res: Headers | null };
 
 async function renderHtml(key: string, status: number, origin: string, request: Request): Promise<HtmlOut> {
-  const document = baseTemplate.document.cloneNode(true) as unknown as Document;
-  const Node = baseTemplate.Node;
+  const document = cloneDoc() as unknown as Document;
+  const Node = docNode;
 
   const url = new URL(key, origin);
   const ctx = makeCtx(document, Node, { url, request });
@@ -139,8 +146,9 @@ async function renderHtml(key: string, status: number, origin: string, request: 
 type NavOut = { status: number; body: Record<string, unknown>; res: Headers | null };
 
 async function renderNav(key: string, origin: string, request: Request): Promise<NavOut> {
-  const document = baseTemplate.document.cloneNode(true) as unknown as Document;
-  const Node = baseTemplate.Node;
+  const document = cloneDoc() as Document;
+  const Node = docNode;
+
   const url = new URL(key, origin);
   const ctx = makeCtx(document, Node, { url, request });
   const tracker = trackAsync(ctx);

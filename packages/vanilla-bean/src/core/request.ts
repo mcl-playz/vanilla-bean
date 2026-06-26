@@ -1,7 +1,7 @@
 import type { Ctx, Redirect } from "./ctx.ts";
 
 export function getRequest(ctx: Ctx): Request {
-  ctx.dynamic = true; // reading the request makes this render per-request → uncacheable
+  ctx.dynamic = true; // reading the request makes this render per-request
   if (!ctx.request) throw new Error("getRequest() is only available on the server, during a request");
   return ctx.request;
 }
