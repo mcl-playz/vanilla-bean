@@ -78,15 +78,15 @@ function cleanup(eff: Effect): void {
 }
 
 export type Signal<T> = {
-  (): T;
-  (next: T): void;
+  (ctx: Ctx): T;
+  (ctx: Ctx, next: T): void;
 };
 
-export function makeSignal<T>(ctx: Ctx, initial?: T): Signal<T> {
+export function makeSignal<T>(initial?: T): Signal<T> {
   let value = initial as T;
   const subscribers = new Set<Effect>();
 
-  const read = (): T => {
+  const read = (ctx: Ctx): T => {
     const eff = currentEffect(ctx);
     if (eff) {
       subscribers.add(eff);
@@ -95,7 +95,7 @@ export function makeSignal<T>(ctx: Ctx, initial?: T): Signal<T> {
     return value;
   };
 
-  const write = (next: T): void => {
+  const write = (ctx: Ctx, next: T): void => {
     if (Object.is(next, value)) return;
     value = next;
     const active = currentEffect(ctx);
@@ -104,14 +104,15 @@ export function makeSignal<T>(ctx: Ctx, initial?: T): Signal<T> {
     }
   };
 
-  const fn = (...args: [] | [T]): T | void => (args.length === 0 ? read() : write(args[0] as T));
+  const fn = (ctx: Ctx, ...args: [] | [T]): T | void => (args.length === 0 ? read(ctx) : write(ctx, args[0] as T));
+  (fn as any).__vbsignal = 1;
   return fn as Signal<T>;
 }
 
-export function signal<T>(ctx: Ctx, initial: T): Signal<T>;
-export function signal<T = undefined>(ctx: Ctx): Signal<T | undefined>;
-export function signal(ctx: Ctx, initial?: any): any {
-  return makeSignal(ctx, initial);
+export function signal<T>(initial: T): T;
+export function signal<T = undefined>(): T | undefined;
+export function signal(initial?: any): any {
+  return makeSignal(initial);
 }
 
 export type Boundary = {
@@ -165,7 +166,7 @@ export function effect(ctx: Ctx, fn: () => unknown): Effect {
     execute() {
       if (eff.disposed) return;
       if (import.meta.env?.SSR && eff.asyncFn) {
-        if (ctx.boundary && ctx.boundary.pending) ctx.boundary.pending(ctx.boundary.pending() + 1);
+        if (ctx.boundary && ctx.boundary.pending) ctx.boundary.pending(ctx, ctx.boundary.pending(ctx) + 1);
         return;
       }
       runCleanups(eff);
@@ -182,10 +183,10 @@ export function effect(ctx: Ctx, fn: () => unknown): Effect {
         ctx.owner = prevOwner;
       }
       if (result && typeof (result as Promise<unknown>).then === "function") {
-        if (b && b.pending) b.pending(b.pending() + 1);
+        if (b && b.pending) b.pending(ctx, b.pending(ctx) + 1);
         Promise.resolve(result)
           .catch((err) => (b && b.fail ? b.fail(err) : console.error(err)))
-          .finally(() => b && b.pending && b.pending(b.pending() - 1));
+          .finally(() => b && b.pending && b.pending(ctx, b.pending(ctx) - 1));
       }
       return result;
     },

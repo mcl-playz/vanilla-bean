@@ -1,9 +1,10 @@
 const REACTIVE_SOURCES = new Set(["useLocation"]);
 const FACTORIES = new Set(["signal"]);
+const CTX = "__vanilla_ctx";
 
 export default function signals({ types: t }: any): any {
-  const get = (name: string) => t.callExpression(t.identifier(name), []);
-  const set = (name: string, val: any) => t.callExpression(t.identifier(name), [val]);
+  const get = (name: string) => t.callExpression(t.identifier(name), [t.identifier(CTX)]);
+  const set = (name: string, val: any) => t.callExpression(t.identifier(name), [t.identifier(CTX), val]);
 
   function rewriteSignal(p: any): void {
     const { node } = p;

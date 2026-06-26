@@ -14,6 +14,7 @@ const links = [
   { href: "/demo/rsc", label: "use server" },
   { href: "/demo/jotai", label: "jotai" },
   { href: "/demo/auth", label: "auth" },
+  { href: "/demo/patterns", label: "patterns" },
   { href: "/demo/boom", label: "boom" },
 ];
 

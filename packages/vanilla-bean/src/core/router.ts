@@ -217,7 +217,7 @@ function snapshot(ctx: Ctx): Loc {
 }
 
 export function useLocation(ctx: Ctx): Loc {
-  return ctx.loc!();
+  return ctx.loc!(ctx);
 }
 
 const staticRegistry = new Map<string, () => unknown>();
@@ -267,7 +267,7 @@ export function start(config: Record<string, unknown> = {}): void {
 
   ctx.transitions = !!(config as any).transitions;
   ctx.rootEl = document.getElementById("root");
-  ctx.loc = makeSignal(ctx, snapshot(ctx));
+  ctx.loc = makeSignal(snapshot(ctx));
   const tag = document.getElementById("_vanilla_static");
 
   if (tag) {
@@ -320,7 +320,7 @@ async function go(ctx: Ctx, href: string, push: boolean): Promise<void> {
     if (push) history.pushState({}, "", url.pathname + url.search + url.hash);
     ctx.url = url;
     ctx.matchedParams = chain.params;
-    ctx.loc!(snapshot(ctx));
+    ctx.loc!(ctx, snapshot(ctx));
     clearHead(ctx);
     try {
       if (!ctx.booted) hydrateBoot(ctx, chain, url.pathname);
@@ -389,7 +389,7 @@ function patchParams(ctx: Ctx, mutate: (sp: URLSearchParams) => void, replace: b
   mutate(url.searchParams);
   history[replace ? "replaceState" : "pushState"]({}, "", url.pathname + url.search + url.hash);
   ctx.url = url;
-  ctx.loc!(snapshot(ctx));
+  ctx.loc!(ctx, snapshot(ctx));
 }
 
 (navigate as any).params = {
@@ -412,7 +412,7 @@ function buildLayered(ctx: Ctx, chain: Chain, path: string, reset: () => void): 
   const build = (i: number): Node => {
     if (i >= chain.layouts.length) {
       ctx.pageOwner = createOwner();
-      return runWithOwner(ctx, ctx.pageOwner, () => buildPage(ctx, chain, { ...ctx.loc!() }, path, reset));
+      return runWithOwner(ctx, ctx.pageOwner, () => buildPage(ctx, chain, { ...ctx.loc!(ctx) }, path, reset));
     }
     const owner = createOwner();
     let outlet!: HTMLElement;
@@ -460,7 +460,7 @@ function swap(ctx: Ctx, chain: Chain, path: string): void {
 
   const reset = () => go(ctx, location.pathname + location.search + location.hash, false);
   ctx.pageOwner = createOwner();
-  let child: any = runWithOwner(ctx, ctx.pageOwner, () => buildPage(ctx, chain, { ...ctx.loc!() }, path, reset));
+  let child: any = runWithOwner(ctx, ctx.pageOwner, () => buildPage(ctx, chain, { ...ctx.loc!(ctx) }, path, reset));
   for (let i = layers.length - 1; i >= 0; i--) {
     const layer = layers[i]!;
     layer.outlet.replaceChildren(child);
@@ -475,7 +475,7 @@ export async function renderRouteToDocument(ctx: Ctx, path: string): Promise<{ c
   clearHead(ctx);
   const chain = await loadChain(path);
   ctx.matchedParams = chain.params;
-  ctx.loc = makeSignal(ctx, snapshot(ctx));
+  ctx.loc = makeSignal(snapshot(ctx));
   setRendering(true);
   try {
     const tree = buildLayered(ctx, chain, path, () => {});

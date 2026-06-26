@@ -7,24 +7,25 @@ type Render = () => unknown;
 
 export function Suspense(ctx: Ctx, props: Props): HTMLElement {
   const render = asFn(props.children);
-  const pending = makeSignal(ctx, 0);
-  const error = makeSignal<unknown>(ctx, null);
+  const pending = makeSignal(0);
+  const error = makeSignal<unknown>(null);
   const container = box(ctx);
+  const boundary: Boundary = { pending, fail: (e) => error(ctx, e) };
 
   let content: Node[];
   let hydrated: boolean;
   if (container.hasAttribute && container.hasAttribute("data-fb")) {
     container.removeAttribute("data-fb");
-    content = buildFresh(ctx, () => build(ctx, { pending, fail: (e) => error(e) }, render, error));
+    content = buildFresh(ctx, () => build(ctx, boundary, render, error));
     hydrated = false;
   } else {
-    [content, hydrated] = buildContent(ctx, container, { pending, fail: (e) => error(e) }, render, error);
+    [content, hydrated] = buildContent(ctx, container, boundary, render, error);
   }
 
   let first = true;
   effect(ctx, () => {
-    const err = error();
-    const loading = pending() > 0;
+    const err = error(ctx);
+    const loading = pending(ctx) > 0;
     const show = err || loading;
     if (import.meta.env?.SSR) show ? container.setAttribute("data-fb", "") : container.removeAttribute("data-fb");
     if (first) {
@@ -39,13 +40,14 @@ export function Suspense(ctx: Ctx, props: Props): HTMLElement {
 
 export function ErrorBoundary(ctx: Ctx, props: Props): HTMLElement {
   const render = asFn(props.children);
-  const error = makeSignal<unknown>(ctx, null);
+  const error = makeSignal<unknown>(null);
   const container = box(ctx);
-  const [content, hydrated] = buildContent(ctx, container, { fail: (e) => error(e) }, render, error);
+  const boundary: Boundary = { fail: (e) => error(ctx, e) };
+  const [content, hydrated] = buildContent(ctx, container, boundary, render, error);
 
   let first = true;
   effect(ctx, () => {
-    const err = error();
+    const err = error(ctx);
     if (first) {
       first = false;
       if (!err && hydrated) return;
@@ -61,19 +63,19 @@ function buildContent(
   container: HTMLElement,
   boundary: Boundary,
   render: Render,
-  error: (e: unknown) => void,
+  error: (ctx: Ctx, e: unknown) => void,
 ): [Node[], boolean] {
   const built = withCursor(ctx, container.firstChild, () => build(ctx, boundary, render, error));
   if (container.firstChild) return [[...container.childNodes], true];
   return [built, false];
 }
 
-function build(ctx: Ctx, boundary: Boundary, render: Render, error: (e: unknown) => void): Node[] {
+function build(ctx: Ctx, boundary: Boundary, render: Render, error: (ctx: Ctx, e: unknown) => void): Node[] {
   try {
     return toNodes(ctx, withBoundary(ctx, boundary, render));
   } catch (e) {
     if (isRedirect(e)) throw e;
-    error(e);
+    error(ctx, e);
     return [];
   }
 }

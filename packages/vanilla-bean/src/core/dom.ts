@@ -17,10 +17,11 @@ type Thunk = { (): unknown; dyn?: boolean };
 const isEventProp = (key: string): boolean => /^on[A-Z]/.test(key);
 export const __dyn = (fn: Thunk): Thunk => ((fn.dyn = true), fn);
 
-export const __use =
-  (ctx: Ctx, comp: (ctx: Ctx, props: Props) => unknown) =>
-  (...args: unknown[]): unknown =>
-    comp(ctx, ...(args as [Props]));
+export const __use = (ctx: Ctx, comp: any): any =>
+  comp && comp.__vbctx ? (...args: unknown[]) => comp(ctx, ...(args as [Props])) : comp;
+
+export const __call = (ctx: Ctx, fn: any, ...args: unknown[]): unknown =>
+  fn && fn.__vbctx ? fn(ctx, ...args) : fn(...args);
 
 export function withCursor<T>(ctx: Ctx, first: Node | null, fn: () => T): T {
   const savedCursor = ctx.cursor;
@@ -55,6 +56,7 @@ function adoptEl(ctx: Ctx, tag: string): Element | null {
 export function __mark(comp: Component, mode: string, key: string): Component {
   comp.__mode = mode;
   comp.__key = key;
+  (comp as any).__vbctx = 1;
   return comp;
 }
 
@@ -242,7 +244,8 @@ function insertDynamic(ctx: Ctx, parent: Node, thunk: Thunk): void {
 
   let owner: ReturnType<typeof effect>;
   owner = effect(ctx, () => {
-    const value = thunk();
+    let value = thunk();
+    if (value && (value as any).__vbsignal) value = (value as any)(ctx);
     if (
       (typeof value === "string" || typeof value === "number") &&
       current.length === 1 &&

@@ -2,8 +2,6 @@ const CTX = "__vanilla_ctx";
 
 const CTX_APIS = new Set([
   "h",
-  "signal",
-  "makeSignal",
   "effect",
   "derived",
   "onCleanup",
@@ -24,15 +22,14 @@ const CTX_APIS = new Set([
 const FRAMEWORK_SOURCES = new Set(["vanilla-bean", "vanilla-bean/jotai"]);
 
 export default function ctxPlugin({ types: t }: { types: any }): any {
-  const isComponentName = (name?: string): boolean => !!name && /^[A-Z]/.test(name);
+  const isCap = (n?: string): boolean => !!n && /^[A-Z]/.test(n);
 
-  const ensureCtxParam = (fn: any): void => {
-    const params = fn.params;
-    if (params.length && t.isIdentifier(params[0]) && params[0].name === CTX) return;
-    params.unshift(t.identifier(CTX));
+  const ensureParam = (fn: any): void => {
+    const p = fn.params;
+    if (p.length && t.isIdentifier(p[0]) && p[0].name === CTX) return;
+    p.unshift(t.identifier(CTX));
   };
-
-  const referencesCtx = (path: any): boolean => {
+  const refsCtx = (path: any): boolean => {
     let found = false;
     path.traverse({
       Identifier(p: any) {
@@ -44,6 +41,11 @@ export default function ctxPlugin({ types: t }: { types: any }): any {
     });
     return found;
   };
+  const prependCtx = (call: any): void => {
+    const a0 = call.arguments[0];
+    if (a0 && t.isIdentifier(a0) && a0.name === CTX) return;
+    call.arguments.unshift(t.identifier(CTX));
+  };
 
   return {
     name: "framework:ctx",
@@ -53,96 +55,207 @@ export default function ctxPlugin({ types: t }: { types: any }): any {
           const ctxLocals = new Set<string>(["h"]);
           for (const stmt of path.node.body) {
             if (t.isImportDeclaration(stmt) && FRAMEWORK_SOURCES.has(stmt.source.value)) {
-              for (const spec of stmt.specifiers) {
-                if (t.isImportSpecifier(spec)) {
-                  const imported = t.isIdentifier(spec.imported) ? spec.imported.name : spec.imported.value;
-                  if (CTX_APIS.has(imported)) ctxLocals.add(spec.local.name);
+              for (const s of stmt.specifiers) {
+                if (t.isImportSpecifier(s)) {
+                  const imp = t.isIdentifier(s.imported) ? s.imported.name : s.imported.value;
+                  if (CTX_APIS.has(imp)) ctxLocals.add(s.local.name);
                 }
               }
             }
           }
+
           path.traverse({
             CallExpression(p: any) {
-              const callee = p.node.callee;
-              if (!t.isIdentifier(callee) || !ctxLocals.has(callee.name)) return;
-              const first = p.node.arguments[0];
-              if (first && t.isIdentifier(first) && first.name === CTX) return;
-              p.node.arguments.unshift(t.identifier(CTX));
+              const c = p.node.callee;
+              if (t.isIdentifier(c) && ctxLocals.has(c.name)) prependCtx(p.node);
             },
           });
-          const components = new Set<string>();
-          const inject = (fnPath: any, name?: string): void => {
-            if (!referencesCtx(fnPath)) return;
-            ensureCtxParam(fnPath.node);
-            if (name && isComponentName(name)) components.add(name);
+
+          let usedCall = false;
+          path.traverse({
+            CallExpression(p: any) {
+              const c = p.node.callee;
+              if (!t.isIdentifier(c) || ctxLocals.has(c.name) || !/^use[A-Z]/.test(c.name)) return;
+              const binding = p.scope.getBinding(c.name);
+              if (!binding || binding.kind !== "module") return;
+              p.replaceWith(
+                t.callExpression(t.identifier("__call"), [
+                  t.identifier(CTX),
+                  t.identifier(c.name),
+                  ...p.node.arguments,
+                ]),
+              );
+              usedCall = true;
+            },
+          });
+
+          type Info = { path: any; node: any; name?: string; componentish: boolean; exported: boolean };
+          const fns = new Map<any, Info>();
+          const calledNames = new Set<string>();
+          const hTags = new Set<string>();
+
+          const add = (p: any, name: string | undefined, componentish: boolean, exported: boolean): void => {
+            let info = fns.get(p.node);
+            if (!info) {
+              info = { path: p, node: p.node, name, componentish, exported };
+              fns.set(p.node, info);
+            }
+            if (name && !info.name) info.name = name;
+            info.componentish ||= componentish;
+            info.exported ||= exported;
           };
 
           path.traverse({
+            CallExpression(p: any) {
+              const c = p.node.callee;
+              if (t.isIdentifier(c)) calledNames.add(c.name);
+              if (t.isIdentifier(c, { name: "h" })) {
+                const tag = p.node.arguments[1];
+                if (t.isIdentifier(tag)) hTags.add(tag.name);
+              }
+              if (t.isIdentifier(c, { name: "__mark" })) {
+                const fn = p.get("arguments.0");
+                if (fn.node && (t.isFunctionExpression(fn.node) || t.isArrowFunctionExpression(fn.node)))
+                  add(fn, undefined, true, false);
+              }
+            },
             FunctionDeclaration(p: any) {
-              const name = p.node.id?.name;
               const exported = t.isExportNamedDeclaration(p.parent) || t.isExportDefaultDeclaration(p.parent);
-              if (isComponentName(name) || exported) inject(p, name);
+              add(p, p.node.id?.name, t.isExportDefaultDeclaration(p.parent), exported);
             },
             VariableDeclarator(p: any) {
               const init = p.get("init");
-              const name = t.isIdentifier(p.node.id) ? p.node.id.name : undefined;
+              if (!t.isIdentifier(p.node.id) || !init.node) return;
+              if (!t.isArrowFunctionExpression(init.node) && !t.isFunctionExpression(init.node)) return;
               const exported = t.isExportNamedDeclaration(p.parentPath?.parent);
-              if (
-                name &&
-                (isComponentName(name) || exported) &&
-                init.node &&
-                (t.isArrowFunctionExpression(init.node) || t.isFunctionExpression(init.node))
-              ) {
-                inject(init, name);
-              }
+              add(init, p.node.id.name, false, exported);
             },
             ExportDefaultDeclaration(p: any) {
               const d = p.get("declaration");
-              if (
-                d.node &&
-                (t.isFunctionDeclaration(d.node) ||
-                  t.isArrowFunctionExpression(d.node) ||
-                  t.isFunctionExpression(d.node))
-              ) {
-                ensureCtxParam(d.node);
-              }
-            },
-            CallExpression(p: any) {
-              if (!t.isIdentifier(p.node.callee, { name: "__mark" })) return;
-              const fn = p.get("arguments.0");
-              if (fn.node && (t.isFunctionExpression(fn.node) || t.isArrowFunctionExpression(fn.node)))
-                ensureCtxParam(fn.node);
+              if (d.node && (t.isArrowFunctionExpression(d.node) || t.isFunctionExpression(d.node)))
+                add(d, undefined, true, true);
             },
             AssignmentExpression(p: any) {
-              const left = p.node.left;
-              if (!t.isMemberExpression(left) || !t.isIdentifier(left.property, { name: "fallback" })) return;
+              const l = p.node.left;
+              if (!t.isMemberExpression(l) || !t.isIdentifier(l.property, { name: "fallback" })) return;
               const r = p.get("right");
               if (r.node && (t.isFunctionExpression(r.node) || t.isArrowFunctionExpression(r.node)))
-                ensureCtxParam(r.node);
+                add(r, undefined, true, false);
             },
           });
+
+          for (const info of fns.values()) {
+            if (info.name && hTags.has(info.name)) info.componentish = true;
+          }
+          const moduleScope = new Map<Info, boolean>();
+          const directly = new Map<Info, boolean>();
+          const callees = new Map<Info, Set<string>>();
+          for (const info of fns.values()) {
+            moduleScope.set(info, !info.path.getFunctionParent());
+            directly.set(info, refsCtx(info.path));
+            const set = new Set<string>();
+            info.path.traverse({
+              CallExpression(p: any) {
+                const c = p.node.callee;
+                if (t.isIdentifier(c)) set.add(c.name);
+              },
+            });
+            callees.set(info, set);
+          }
+          void calledNames;
+
+          const inject = new Set<Info>();
+          for (const info of fns.values()) {
+            const componentish = info.componentish || (info.exported && directly.get(info));
+            if (componentish || (moduleScope.get(info) && directly.get(info))) inject.add(info);
+          }
+          let changed = true;
+          while (changed) {
+            changed = false;
+            const names = new Set([...inject].map((i) => i.name).filter(Boolean) as string[]);
+            for (const info of fns.values()) {
+              if (inject.has(info) || !moduleScope.get(info)) continue;
+              for (const callee of callees.get(info)!) {
+                if (names.has(callee)) {
+                  inject.add(info);
+                  changed = true;
+                  break;
+                }
+              }
+            }
+          }
+
+          const injNames = new Set([...inject].map((i) => i.name).filter(Boolean) as string[]);
+
+          for (const info of inject) {
+            ensureParam(info.node);
+            if (info.name) {
+              const brand = t.expressionStatement(
+                t.assignmentExpression(
+                  "=",
+                  t.memberExpression(t.identifier(info.name), t.identifier("__vbctx")),
+                  t.numericLiteral(1),
+                ),
+              );
+              const stmt = info.path.getStatementParent();
+              if (stmt) stmt.insertAfter(brand);
+            }
+          }
+
+          path.traverse({
+            CallExpression(p: any) {
+              const c = p.node.callee;
+              if (t.isIdentifier(c) && injNames.has(c.name)) prependCtx(p.node);
+            },
+          });
+
+          const inCtxScope = (p: any): boolean => {
+            let fp = p.getFunctionParent();
+            while (fp) {
+              if (inject.has(fns.get(fp.node)!)) return true;
+              fp = fp.getFunctionParent();
+            }
+            return false;
+          };
           let usedUse = false;
           path.traverse({
             Identifier(p: any) {
-              if (!components.has(p.node.name) || p.listKey !== "arguments") return;
+              const name = p.node.name;
+              if (p.listKey !== "arguments") return;
               const call = p.parentPath;
               if (!call.isCallExpression()) return;
               const callee = call.node.callee;
               if (t.isIdentifier(callee, { name: "__use" })) return;
               if (t.isIdentifier(callee, { name: "h" }) && p.key === 1) return;
-              p.replaceWith(t.callExpression(t.identifier("__use"), [t.identifier(CTX), t.identifier(p.node.name)]));
+              const binding = p.scope.getBinding(name);
+              const imported = !!binding && binding.kind === "module";
+              if (!injNames.has(name) && !(isCap(name) && imported)) return;
+              if (!inCtxScope(p)) return;
+              p.replaceWith(t.callExpression(t.identifier("__use"), [t.identifier(CTX), t.identifier(name)]));
               usedUse = true;
             },
           });
-
-          if (usedUse) {
+          const helpers = [usedUse ? "__use" : "", usedCall ? "__call" : ""].filter((n) => n);
+          if (helpers.length) {
             path.node.body.unshift(
               t.importDeclaration(
-                [t.importSpecifier(t.identifier("__use"), t.identifier("__use"))],
+                helpers.map((n) => t.importSpecifier(t.identifier(n), t.identifier(n))),
                 t.stringLiteral("vanilla-bean"),
               ),
             );
           }
+
+          path.traverse({
+            Identifier(p: any) {
+              if (p.node.name === CTX && !p.getFunctionParent()) {
+                throw p.buildCodeFrameError(
+                  "[vanilla-bean] a render-context API (a signal read, effect, cookies, …) is used at module scope, " +
+                    "where there is no render context. Move it inside a component. " +
+                    "(Creating a signal at module scope is fine — `const x = signal(0)` — but reading it must be inside a component.)",
+                );
+              }
+            },
+          });
         },
       },
     },

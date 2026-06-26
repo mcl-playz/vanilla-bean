@@ -18,6 +18,12 @@ export type Ctx = {
   devEntry: string;
 };
 
+function devEntryUrl(entryFile: string): string {
+  const rel = path.relative(process.cwd(), entryFile).split(path.sep).join("/");
+  if (!rel.startsWith("..")) return "/" + rel;
+  return "/@fs/" + entryFile.split(path.sep).join("/").replace(/^\//, "");
+}
+
 export default function framework(userSite: any = {}, opts: any = {}): any[] {
   const ssrBuild = !!opts.ssrBuild;
   const entryFile = path.join(here, "client.js");
@@ -39,7 +45,7 @@ export default function framework(userSite: any = {}, opts: any = {}): any[] {
     serverEntry: path.join(here, "server.js"),
     indexPath: path.join(here, "index.js"),
     apiRoutesPath: path.join(here, "api-routes.js"),
-    devEntry: "/" + path.relative(process.cwd(), entryFile).split(path.sep).join("/"),
+    devEntry: devEntryUrl(entryFile),
   };
 
   return [runtimeConfigPlugin(ctx), configPlugin(ctx), jsxPlugin(ctx), devPlugin(ctx)];
