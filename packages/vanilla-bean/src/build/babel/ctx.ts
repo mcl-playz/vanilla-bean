@@ -19,6 +19,9 @@ const CTX_APIS = new Set([
   "trackAsync",
   "untrackAsync",
   "trackServer",
+  "useTransition",
+  "startTransition",
+  "isTransitioning",
 ]);
 
 const FRAMEWORK_SOURCES = new Set(["vanilla-bean", "vanilla-bean/jotai"]);

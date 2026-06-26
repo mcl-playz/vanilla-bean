@@ -1,4 +1,4 @@
-import { makeSignal, effect, withBoundary, type Boundary } from "./reactive.ts";
+import { makeSignal, effect, withBoundary, isTransitioning, type Boundary } from "./reactive.ts";
 import { claim, withCursor, buildFresh, type Props } from "./dom.ts";
 import { isRedirect } from "./request.ts";
 import type { Ctx } from "./ctx.ts";
@@ -26,7 +26,8 @@ export function Suspense(ctx: Ctx, props: Props): HTMLElement {
   effect(ctx, () => {
     const err = error(ctx);
     const loading = pending(ctx) > 0;
-    const show = err || loading;
+    const tx = isTransitioning(ctx);
+    const show = err || (loading && !(tx && !first));
     if (import.meta.env?.SSR) show ? container.setAttribute("data-fb", "") : container.removeAttribute("data-fb");
     if (first) {
       first = false;

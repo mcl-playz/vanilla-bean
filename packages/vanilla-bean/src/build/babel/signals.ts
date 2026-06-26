@@ -1,5 +1,6 @@
 const REACTIVE_SOURCES = new Set(["useLocation"]);
 const FACTORIES = new Set(["signal"]);
+const TUPLE_SIGNAL_SOURCES = new Set(["useTransition"]);
 const CTX = "__vanilla_ctx";
 
 export default function signals({ types: t }: any): any {
@@ -43,6 +44,29 @@ export default function signals({ types: t }: any): any {
     }
   }
 
+  function rewriteTupleSignal(p: any): void {
+    const { node } = p;
+    if (!t.isArrayPattern(node.id) || !t.isCallExpression(node.init)) return;
+    const callee = node.init.callee;
+    if (!t.isIdentifier(callee) || !TUPLE_SIGNAL_SOURCES.has(callee.name)) return;
+    const first = node.id.elements[0];
+    if (!t.isIdentifier(first)) return;
+    const binding = p.scope.getBinding(first.name);
+    if (!binding) return;
+    for (const ref of binding.referencePaths) {
+      const parent = ref.parentPath;
+      if (parent.isCallExpression() && parent.node.callee === ref.node) {
+        const args = parent.node.arguments;
+        if (!(t.isIdentifier(args[0]) && args[0].name === CTX)) args.unshift(t.identifier(CTX));
+        ref.skip();
+        continue;
+      }
+      if (parent.isReturnStatement()) continue;
+      ref.replaceWith(get(first.name));
+      ref.skip();
+    }
+  }
+
   function rewriteDestructure(p: any): void {
     const { node } = p;
     if (!t.isObjectPattern(node.id) || !t.isCallExpression(node.init)) return;
@@ -64,6 +88,7 @@ export default function signals({ types: t }: any): any {
     visitor: {
       VariableDeclarator(path: any) {
         rewriteSignal(path);
+        rewriteTupleSignal(path);
         rewriteDestructure(path);
       },
     },

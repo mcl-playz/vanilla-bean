@@ -68,6 +68,12 @@ function notifyEffect(eff: Effect): void {
   else scheduleEffect(eff);
 }
 
+let CURRENT_TX: Set<Promise<unknown>> | null = null;
+
+export function flushSync(): void {
+  while (pendingEffects.size) flushEffects();
+}
+
 function currentEffect(ctx: Ctx): Effect | undefined {
   return ctx.listeners[ctx.listeners.length - 1];
 }
@@ -185,6 +191,7 @@ export function effect(ctx: Ctx, fn: () => unknown): Effect {
       }
       if (result && typeof (result as Promise<unknown>).then === "function") {
         if (b && b.pending) b.pending(ctx, b.pending(ctx) + 1);
+        if (CURRENT_TX) CURRENT_TX.add(result as Promise<unknown>);
         Promise.resolve(result)
           .catch((err) => (b && b.fail ? b.fail(err) : console.error(err)))
           .finally(() => b && b.pending && b.pending(ctx, b.pending(ctx) - 1));
@@ -263,6 +270,39 @@ export function derived<T>(ctx: Ctx, fn: () => T): () => T {
     }
     return dirty ? recompute() : value;
   };
+}
+
+const transitionCount = makeSignal(0);
+
+export function isTransitioning(ctx: Ctx): boolean {
+  return transitionCount(ctx) > 0;
+}
+
+export function startTransition(ctx: Ctx, fn: () => unknown, pending?: Signal<boolean>): void {
+  const promises = new Set<Promise<unknown>>();
+  const prev = CURRENT_TX;
+  CURRENT_TX = promises;
+  if (pending) pending(ctx, true);
+  transitionCount(ctx, transitionCount(ctx) + 1);
+  let r: unknown;
+  try {
+    r = fn();
+    flushSync();
+  } finally {
+    CURRENT_TX = prev;
+  }
+  if (r && typeof (r as Promise<unknown>).then === "function") promises.add(r as Promise<unknown>);
+  const finish = (): void => {
+    transitionCount(ctx, transitionCount(ctx) - 1);
+    if (pending) pending(ctx, false);
+  };
+  if (promises.size) Promise.allSettled([...promises]).then(finish);
+  else finish();
+}
+
+export function useTransition(ctx: Ctx): [boolean, (fn: () => unknown) => void] {
+  const pending = makeSignal(false);
+  return [pending as unknown as boolean, (fn: () => unknown) => startTransition(ctx, fn, pending)];
 }
 
 export type { Effect };
