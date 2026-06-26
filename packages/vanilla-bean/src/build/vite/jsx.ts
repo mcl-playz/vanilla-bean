@@ -22,8 +22,10 @@ export function jsxPlugin(ctx: Ctx): any {
       const file = id.split("?")[0];
       const jsx = /\.[jt]sx$/.test(file);
 
-      const directed = !jsx && /\.[jt]s$/.test(file) && !file.includes("/node_modules/") && DIRECTIVE.test(code);
-      if (!jsx && !directed) return null;
+      const local = !file.includes("/node_modules/");
+      const directed = !jsx && /\.[jt]s$/.test(file) && local && DIRECTIVE.test(code);
+      const isMiddleware = !jsx && /\/middleware\.[jt]s$/.test(file) && local;
+      if (!jsx && !directed && !isMiddleware) return null;
 
       const ts = /\.tsx?$/.test(file);
       const browser = !ctx.ssrBuild && !opts?.ssr;

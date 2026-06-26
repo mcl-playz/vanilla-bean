@@ -38,6 +38,12 @@ const pageModules = import.meta.glob("/src/pages/**/*.{js,jsx,ts,tsx}");
 const layoutModules = import.meta.glob("/src/**/layout.{js,jsx,ts,tsx}");
 const notFoundModules = import.meta.glob("/src/**/not-found.{js,jsx,ts,tsx}");
 const errorModules = import.meta.glob("/src/**/error-page.{js,jsx,ts,tsx}");
+const middlewareModules = import.meta.glob("/src/middleware.{js,ts}");
+
+let middlewareFn: ((ctx: Ctx) => unknown) | null = null;
+async function applyMiddleware(ctx: Ctx): Promise<void> {
+  if (middlewareFn) await middlewareFn(ctx);
+}
 
 const SPECIAL = /\/(layout|not-found|error-page)\.[jt]sx?$/;
 const SCORE: Record<string, number> = { static: 3, dynamic: 2, catch: 1, optcatch: 0 };
@@ -248,6 +254,11 @@ export async function preloadAll(): Promise<void> {
   for (const dir in errorDirs) add(errorDirs[dir]);
 
   await Promise.all([...loaders].map((loader) => loader()));
+
+  for (const key in middlewareModules) {
+    const mod: any = await middlewareModules[key]!();
+    middlewareFn = typeof mod?.default === "function" ? mod.default : null;
+  }
 }
 export async function collectStatics(): Promise<Record<string, unknown>> {
   for (const [key, fn] of staticRegistry) {
@@ -491,16 +502,21 @@ function swap(ctx: Ctx, chain: Chain, path: string): void {
 
 export async function renderRouteToDocument(ctx: Ctx, path: string): Promise<{ cache: boolean }> {
   clearHead(ctx);
+
   const chain = await loadChain(path);
   ctx.matchedParams = chain.params;
   ctx.loc = makeSignal(snapshot(ctx));
+
+  await applyMiddleware(ctx);
   setRendering(true);
+
   try {
     const tree = buildLayered(ctx, chain, path, () => {});
     ctx.doc.getElementById("root")!.replaceChildren(tree as Node);
   } finally {
     setRendering(false);
   }
+
   flushHead(ctx);
   return { cache: chain.cache };
 }

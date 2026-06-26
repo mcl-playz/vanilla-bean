@@ -17,6 +17,7 @@ const links = [
   { href: "/demo/patterns", label: "patterns" },
   { href: "/demo/transition", label: "transition" },
   { href: "/demo/form", label: "form" },
+  { href: "/demo/dashboard", label: "dashboard" },
   { href: "/demo/boom", label: "boom" },
 ];
 
