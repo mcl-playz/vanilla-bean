@@ -1,3 +1,19 @@
+declare global {
+  namespace JSX {
+    type Element = any;
+    interface IntrinsicElements {
+      [el: string]: any;
+    }
+  }
+
+  const Fragment: any;
+
+  interface ImportMeta {
+    env?: { SSR?: boolean; [k: string]: unknown };
+    glob(pattern: string): Record<string, () => Promise<any>>;
+  }
+}
+
 export type { Signal } from "./core/reactive.ts";
 export type { Ctx, Loc } from "./core/ctx.ts";
 

@@ -5,7 +5,10 @@ import type { Ctx } from "./ctx.ts";
 
 type Render = () => unknown;
 
-export function Suspense(ctx: Ctx, props: Props): HTMLElement {
+export function Suspense(props: Props): HTMLElement;
+export function Suspense(ctx: Ctx, props: Props): HTMLElement;
+export function Suspense(ctxOrProps: Ctx | Props, props: Props = {}): HTMLElement {
+  const ctx = ctxOrProps as Ctx;
   const render = asFn(props.children);
   const pending = makeSignal(0);
   const error = makeSignal<unknown>(null);
@@ -39,7 +42,10 @@ export function Suspense(ctx: Ctx, props: Props): HTMLElement {
   return container;
 }
 
-export function ErrorBoundary(ctx: Ctx, props: Props): HTMLElement {
+export function ErrorBoundary(props: Props): HTMLElement;
+export function ErrorBoundary(ctx: Ctx, props: Props): HTMLElement;
+export function ErrorBoundary(ctxOrProps: Ctx | Props, props: Props = {}): HTMLElement {
+  const ctx = ctxOrProps as Ctx;
   const render = asFn(props.children);
   const error = makeSignal<unknown>(null);
   const container = box(ctx);

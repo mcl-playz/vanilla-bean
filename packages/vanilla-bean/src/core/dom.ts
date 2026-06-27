@@ -288,7 +288,10 @@ function applyProps(ctx: Ctx, el: HTMLElement, props: Props): void {
   }
 }
 
-export function For(ctx: Ctx, props: Props): any {
+export function For(props: Props): any;
+export function For(ctx: Ctx, props: Props): any;
+export function For(ctxOrProps: Ctx | Props, props: Props = EMPTY_PROPS): any {
+  const ctx = ctxOrProps as Ctx;
   const each = props.each as () => unknown[];
   const render = props.children as (item: unknown, index: number) => Node;
   const keyOf = (props.key as (item: unknown, index: number) => unknown) || ((item: unknown) => item);
@@ -356,13 +359,19 @@ export function For(ctx: Ctx, props: Props): any {
   return h(ctx, as, rest, box);
 }
 
-export function Fragment(ctx: Ctx, props: Props): DocumentFragment {
+export function Fragment(props: Props): DocumentFragment;
+export function Fragment(ctx: Ctx, props: Props): DocumentFragment;
+export function Fragment(ctxOrProps: Ctx | Props, props: Props = EMPTY_PROPS): DocumentFragment {
+  const ctx = ctxOrProps as Ctx;
   const frag = ctx.doc.createDocumentFragment();
   appendChild(ctx, frag, props.children);
   return frag;
 }
 
-export function Head(ctx: Ctx, props: Props): DocumentFragment {
+export function Head(props: Props): DocumentFragment;
+export function Head(ctx: Ctx, props: Props): DocumentFragment;
+export function Head(ctxOrProps: Ctx | Props, props: Props = EMPTY_PROPS): DocumentFragment {
+  const ctx = ctxOrProps as Ctx;
   const frag = ctx.doc.createDocumentFragment();
   buildFresh(ctx, () => appendChild(ctx, frag, props.children));
   for (const node of [...frag.childNodes]) if (node.nodeType === 1) ctx.pendingHead.push(node as Element);

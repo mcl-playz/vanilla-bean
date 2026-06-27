@@ -12,19 +12,30 @@ const tsOnly = new Set(["tsconfig.json", "src/app.d.ts"]);
 const tailwindOnly = new Set(["src/assets/index.css"]);
 const invalidProjectPath = "letters, numbers, dot, dash, underscore and slash only";
 
-function validateProjectPath(v) {
-  return v && /[^a-zA-Z0-9._/-]/.test(v) ? invalidProjectPath : undefined;
-}
-
 function formatPathForMessage(dest) {
   const rel = path.relative(process.cwd(), dest);
   if (!rel) return ".";
   return rel && !rel.startsWith("..") && !path.isAbsolute(rel) ? rel : dest;
 }
 
+function validateProjectPath(v) {
+  return v && /[^a-zA-Z0-9._/-]/.test(v) ? invalidProjectPath : undefined;
+}
+
+function projectNameFromDest(dest) {
+  return path.basename(path.resolve(dest));
+}
+
+export function resolveProjectName({ dest, name }) {
+  return name && name !== "." ? name : projectNameFromDest(dest);
+}
+
 export function scaffold({ dest, name, ts, tailwind }) {
+  const projectName = resolveProjectName({ dest, name });
+  if (!projectName) throw new Error("project path must include a directory name");
+
   const tokens = {
-    name,
+    name: projectName,
     x: ts ? "tsx" : "jsx",
     configExt: ts ? "ts" : "js",
     tw_import: tailwind ? 'import tailwindcss from "@tailwindcss/vite";\n\n' : "",
@@ -57,7 +68,7 @@ export function scaffold({ dest, name, ts, tailwind }) {
 
       if (rel === "package.json") {
         const pkg = JSON.parse(fs.readFileSync(abs, "utf8"));
-        pkg.name = name;
+        pkg.name = projectName;
         if (ts) pkg.scripts.typecheck = "tsc --noEmit";
         const dev = {
           ...(tailwind ? { "@tailwindcss/vite": "^4.0.0" } : {}),
@@ -93,7 +104,7 @@ async function main() {
   if (projectPathError) return p.cancel(projectPathError);
 
   const dest = path.resolve(process.cwd(), projectPath);
-  const name = path.basename(dest);
+  const name = resolveProjectName({ dest });
   if (!name) return p.cancel("project path must include a directory name");
 
   const lang = await p.select({
