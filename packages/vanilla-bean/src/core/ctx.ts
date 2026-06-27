@@ -20,6 +20,7 @@ export type Ctx = {
   hydrating: boolean;
   adoptMap: Map<string, Element>;
   pendingHead: Element[];
+  layoutHead: Element[];
   listeners: Effect[];
   owner: Owner | null;
   boundary: Boundary | null;
@@ -53,6 +54,7 @@ export function makeCtx(
     hydrating: false,
     adoptMap: new Map(),
     pendingHead: [],
+    layoutHead: [],
     listeners: [],
     owner: null,
     boundary: null,

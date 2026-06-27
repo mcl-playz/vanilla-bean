@@ -162,11 +162,20 @@ async function renderNav(key: string, origin: string, request: Request): Promise
   if (!ctx.redirect) await settleCapped(tracker);
   const res = ctx.resHeaders;
   if (ctx.redirect) return { status: 200, body: { redirect: ctx.redirect.url }, res };
+
+  const doc = document as any;
   const islands: Record<string, string> = {};
-  for (const el of (document as unknown as Document).querySelectorAll('island[data-mode="server"][data-key]')) {
+  for (const el of doc.querySelectorAll('island[data-mode="server"][data-key]')) {
     islands[el.getAttribute("data-key")!] = el.innerHTML;
   }
-  return { status: matchRoute(url.pathname) ? 200 : 404, body: { islands }, res };
+
+  const titleEl = doc.querySelector("title");
+  const head = {
+    title: titleEl ? titleEl.textContent : "",
+    meta: [...doc.head.querySelectorAll("[data-head]")].map((el: any) => el.outerHTML),
+  };
+
+  return { status: matchRoute(url.pathname) ? 200 : 404, body: { islands, head }, res };
 }
 
 const TYPES: Record<string, string> = {

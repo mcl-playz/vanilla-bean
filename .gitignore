@@ -6,3 +6,4 @@ packages/vanilla-bean/README.md
 
 dist
 node_modules
+/e2e

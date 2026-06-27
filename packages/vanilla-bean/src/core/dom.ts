@@ -375,7 +375,8 @@ export function clearHead(ctx: Ctx): void {
 }
 
 export function flushHead(ctx: Ctx): void {
-  for (let i = ctx.pendingHead.length - 1; i >= 0; i--) applyHead(ctx, ctx.pendingHead[i]!);
+  for (let i = 0; i < ctx.layoutHead.length; i++) applyHead(ctx, ctx.layoutHead[i]!);
+  for (let i = 0; i < ctx.pendingHead.length; i++) applyHead(ctx, ctx.pendingHead[i]!);
   ctx.pendingHead = [];
 }
 

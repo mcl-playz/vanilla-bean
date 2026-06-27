@@ -286,8 +286,8 @@ export function start(config: Record<string, unknown> = {}): void {
 
   collectAdopt(ctx);
   const here = () => location.pathname + location.search + location.hash;
-  go(ctx, here(), false);
-  window.addEventListener("popstate", () => go(ctx, here(), false));
+  go(ctx, here(), "none");
+  window.addEventListener("popstate", () => go(ctx, here(), "none"));
   document.addEventListener("click", (e) => onLinkClick(ctx, e as MouseEvent));
   document.addEventListener("pointerover", (e) => onLinkHover(ctx, e));
 }
@@ -316,25 +316,42 @@ function onLinkClick(ctx: Ctx, e: MouseEvent): void {
   if (!matchRoute(url.pathname)) return;
   e.preventDefault();
   const target = url.pathname + url.search + url.hash;
-  if (target !== location.pathname + location.search + location.hash) go(ctx, target, true);
+  if (target !== location.pathname + location.search + location.hash) go(ctx, target, "push");
 }
 
-async function go(ctx: Ctx, href: string, push: boolean): Promise<void> {
+let navSeq = 0;
+
+async function go(ctx: Ctx, href: string, mode: "push" | "replace" | "none"): Promise<void> {
+  const seq = ++navSeq;
   const url = new URL(href, location.href);
   const chain = await loadChain(url.pathname);
-  const navPromise = ctx.booted && chain.serverRoute ? fetchNav(url) : null;
+  if (seq !== navSeq) return;
+
+  const navPromise = ctx.booted && chain.serverRoute ? fetchNav(url).catch(() => "fail" as const) : null;
 
   if (ctx.booted && url.pathname + url.search === location.pathname + location.search) {
     if (navPromise) {
       const nav = await navPromise;
+      if (seq !== navSeq || nav === "fail") return;
       if (nav.redirect) return navigate(nav.redirect, { replace: true });
       if (nav.islands) fillServerIslands(ctx, nav.islands);
+      patchHead(nav.head);
     }
     return;
   }
 
+  let nav: Awaited<typeof navPromise> = null;
+  if (navPromise) {
+    nav = await navPromise;
+    if (seq !== navSeq) return;
+    if (nav === "fail") return void (location.href = url.pathname + url.search + url.hash);
+    if (nav.redirect) return navigate(nav.redirect, { replace: true });
+  }
+
   const apply = () => {
-    if (push) history.pushState({}, "", url.pathname + url.search + url.hash);
+    const target = url.pathname + url.search + url.hash;
+    if (mode === "push") history.pushState({}, "", target);
+    else if (mode === "replace") history.replaceState({}, "", target);
     ctx.url = url;
     ctx.matchedParams = chain.params;
     ctx.loc!(ctx, snapshot(ctx));
@@ -346,25 +363,13 @@ async function go(ctx: Ctx, href: string, push: boolean): Promise<void> {
       if (isRedirect(e)) return navigate((e as any).redirect.url, { replace: true });
       throw e;
     }
+    if (nav && nav.islands) fillServerIslands(ctx, nav.islands);
     flushHead(ctx);
+    if (nav) patchHead(nav.head);
   };
 
   if (ctx.transitions && (document as any).startViewTransition) (document as any).startViewTransition(apply);
   else apply();
-
-  if (navPromise) {
-    const target = url.pathname + url.search;
-    try {
-      const nav = await navPromise;
-      if (nav.redirect) {
-        navigate(nav.redirect, { replace: true });
-        return;
-      }
-      if (nav.islands && location.pathname + location.search === target) fillServerIslands(ctx, nav.islands);
-    } catch {
-      location.href = url.pathname + url.search + url.hash;
-    }
-  }
 }
 
 function fillServerIslands(ctx: Ctx, islands: Map<string, string>): void {
@@ -380,17 +385,34 @@ export async function revalidate(): Promise<void> {
   try {
     const nav = await fetchNav(new URL(location.href));
     if (nav.redirect) navigate(nav.redirect, { replace: true });
-    else if (nav.islands) fillServerIslands(ctx, nav.islands);
+    else if (nav.islands) {
+      fillServerIslands(ctx, nav.islands);
+      patchHead(nav.head);
+    }
   } catch {}
 }
 
+type HeadPatch = { title?: string; meta?: string[] };
+type Nav = { islands?: Map<string, string>; redirect?: string; head?: HeadPatch };
+
 const NAV_MIME = "application/vnd.vanilla-bean.nav+json";
-async function fetchNav(url: URL): Promise<{ islands?: Map<string, string>; redirect?: string }> {
+async function fetchNav(url: URL): Promise<Nav> {
   const res = await fetch(url.pathname + url.search, { headers: { accept: NAV_MIME } });
   if (!res.ok) throw new Error("nav " + res.status);
-  const payload = (await res.json()) as { islands?: Record<string, string>; redirect?: string };
+  const payload = (await res.json()) as { islands?: Record<string, string>; redirect?: string; head?: HeadPatch };
   if (payload.redirect) return { redirect: payload.redirect };
-  return { islands: new Map(Object.entries(payload.islands || {})) };
+  return { islands: new Map(Object.entries(payload.islands || {})), head: payload.head };
+}
+
+function patchHead(head?: HeadPatch): void {
+  if (!head || typeof document === "undefined") return;
+  if (typeof head.title === "string") document.title = head.title;
+  for (const n of document.head.querySelectorAll("[data-head]")) n.remove();
+  if (head.meta && head.meta.length) {
+    const tpl = document.createElement("template");
+    tpl.innerHTML = head.meta.join("");
+    document.head.appendChild(tpl.content);
+  }
 }
 
 export function navigate(href: string, { replace = false }: { replace?: boolean } = {}): void {
@@ -401,13 +423,9 @@ export function navigate(href: string, { replace = false }: { replace?: boolean 
     location.href = href;
     return;
   }
+
   const target = url.pathname + url.search + url.hash;
-  if (replace) {
-    history.replaceState({}, "", target);
-    go(ctx, target, false);
-  } else {
-    go(ctx, target, true);
-  }
+  go(ctx, target, replace ? "replace" : "push");
 }
 
 function patchParams(ctx: Ctx, mutate: (sp: URLSearchParams) => void, replace: boolean): void {
@@ -434,6 +452,10 @@ function createOutlet(ctx: Ctx): HTMLElement {
   return d;
 }
 
+function rebuildLayoutHead(ctx: Ctx): void {
+  ctx.layoutHead = ctx.mounted.flatMap((m: any) => m.head || []);
+}
+
 function buildLayered(ctx: Ctx, chain: Chain, path: string, reset: () => void): Node {
   ctx.mounted = [];
   const build = (i: number): Node => {
@@ -443,7 +465,10 @@ function buildLayered(ctx: Ctx, chain: Chain, path: string, reset: () => void): 
     }
     const owner = createOwner();
     let outlet!: HTMLElement;
+    const headStart = ctx.pendingHead.length;
+    let layerHead: Element[] = [];
     const slot = () => {
+      layerHead = ctx.pendingHead.slice(headStart);
       outlet = (claim(ctx, "div") as HTMLElement | null) ?? createOutlet(ctx);
       withCursor(ctx, outlet.firstChild, () => {
         const inner = build(i + 1);
@@ -452,15 +477,19 @@ function buildLayered(ctx: Ctx, chain: Chain, path: string, reset: () => void): 
       return outlet;
     };
     const node = runWithOwner(ctx, owner, () => h(ctx, chain.layouts[i]!, null, slot)) as Node;
-    ctx.mounted.push({ Comp: chain.layouts[i]!, outlet, owner });
+    ctx.mounted.push({ Comp: chain.layouts[i]!, outlet, owner, head: layerHead });
     return node;
   };
-  return build(0);
+  const tree = build(0);
+  const layoutCount = ctx.mounted.reduce((s: number, m: any) => s + m.head.length, 0);
+  ctx.pendingHead = ctx.pendingHead.slice(layoutCount);
+  rebuildLayoutHead(ctx);
+  return tree;
 }
 
 function hydrateBoot(ctx: Ctx, chain: Chain, path: string): void {
   ctx.booted = true;
-  const reset = () => go(ctx, location.pathname + location.search + location.hash, false);
+  const reset = () => go(ctx, location.pathname + location.search + location.hash, "none");
   const wasEmpty = !ctx.rootEl!.firstChild;
   const tree = withCursor(ctx, ctx.rootEl!.firstChild, () => buildLayered(ctx, chain, path, reset));
   if (wasEmpty) ctx.rootEl!.replaceChildren(tree as Node);
@@ -487,17 +516,23 @@ function swap(ctx: Ctx, chain: Chain, path: string): void {
     layers.push({ Comp: layouts[i]!, outlet, owner: createOwner() });
   }
 
-  const reset = () => go(ctx, location.pathname + location.search + location.hash, false);
+  const reset = () => go(ctx, location.pathname + location.search + location.hash, "none");
   ctx.pageOwner = createOwner();
   let child: any = runWithOwner(ctx, ctx.pageOwner, () => buildPage(ctx, chain, { ...ctx.loc!(ctx) }, path, reset));
+  const pageHead = ctx.pendingHead;
+  ctx.pendingHead = [];
   for (let i = layers.length - 1; i >= 0; i--) {
     const layer = layers[i]!;
     layer.outlet.replaceChildren(child);
     child = runWithOwner(ctx, layer.owner, () => h(ctx, layer.Comp, null, layer.outlet));
+    (layer as any).head = ctx.pendingHead;
+    ctx.pendingHead = [];
   }
   if (k === 0) parentOutlet.replaceChildren(ctx.doc.createComment("app"), child);
   else parentOutlet.replaceChildren(child);
   ctx.mounted = ctx.mounted.concat(layers);
+  rebuildLayoutHead(ctx);
+  ctx.pendingHead = pageHead;
 }
 
 export async function renderRouteToDocument(ctx: Ctx, path: string): Promise<{ cache: boolean }> {
