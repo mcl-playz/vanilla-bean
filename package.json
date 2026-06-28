@@ -4,6 +4,7 @@
   "type": "module",
   "packageManager": "pnpm@11.5.1",
   "scripts": {
+    "prepare": "pnpm build",
     "build": "pnpm --filter vanilla-bean build",
     "typecheck": "pnpm --filter vanilla-bean typecheck",
     "demo": "pnpm --filter demo dev",
